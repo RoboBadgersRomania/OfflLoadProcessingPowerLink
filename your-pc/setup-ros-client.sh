@@ -33,23 +33,67 @@ cat >> ~/.bashrc <<'EOF'
 # >>> ros2-remote >>>
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
-# Use the Zenoh router on the processing offload PC (via Tailscale). Comment out to work offline.
-export ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/processingoffloadpc:7447"];mode="client"'
-# Your Ubuntu username ON THE offload PC (change if it differs from this PC's).
+# Your Ubuntu username ON THE nuclear powerplants (change if it differs from this PC's).
 export OFFLOAD_USER="$USER"
-export OFFLOAD_HOST=processingoffloadpc
+
+# --- Which nuclear powerplant (offload PC) to use: list-powerplants / use-powerplant NAME ---
+export OFFLOAD_HOST="$(cat ~/.offloadpc-target 2>/dev/null || echo processingoffloadpc)"
+_offload_zenoh() {
+  if [ "$OFFLOAD_HOST" = local ]; then unset ZENOH_CONFIG_OVERRIDE
+  else export ZENOH_CONFIG_OVERRIDE="connect/endpoints=[\"tcp/$OFFLOAD_HOST:7447\"];mode=\"client\""; fi
+}
+_offload_zenoh
+offloadpc-online() { [ "$OFFLOAD_HOST" != local ] && timeout 4 bash -c "</dev/tcp/${1:-$OFFLOAD_HOST}/22" 2>/dev/null; }
+_offload_names() {   # powerplants known to Tailscale (Windows) + ones you used before
+  { local ts="/mnt/c/Program Files/Tailscale/tailscale.exe"
+    [ -x "$ts" ] && "$ts" status 2>/dev/null | tr -d '\r' | awk '{print $2}' | grep '^processingoffloadpc'
+    cat ~/.offloadpc-known 2>/dev/null; echo "$OFFLOAD_HOST"; } | grep -v '^local$' | grep -v '^$' | sort -u
+}
+_green=$'\e[32m●\e[0m'
+_red=$'\e[31m●\e[0m'
+list-powerplants() {
+  local n specs dot
+  echo "Nuclear powerplants (current: $OFFLOAD_HOST):"
+  for n in $(_offload_names); do
+    if offloadpc-online "$n"; then
+      dot="$_green"
+      specs=$(timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 "$OFFLOAD_USER@$n" \
+              "cat ~/.offload-agent/specs 2>/dev/null" 2>/dev/null | tr -d '\r')
+      [ -n "$specs" ] && echo "$specs" > ~/.offloadpc-specs-"$n"
+    else
+      dot="$_red"; specs="$(cat ~/.offloadpc-specs-"$n" 2>/dev/null) (offline)"
+    fi
+    printf '  %s %-30s %s%s\n' "$dot" "$n" "${specs:-?}" "$([ "$n" = "$OFFLOAD_HOST" ] && echo '   <- current')"
+  done
+  echo "Switch: use-powerplant NAME   (e.g. use-powerplant 4090, use-powerplant local)"
+}
+use-powerplant() {
+  local n="${1:-}"
+  if [ -z "$n" ]; then list-powerplants; return; fi
+  case "$n" in local|processingoffloadpc*) ;; *) n="processingoffloadpc-$n" ;; esac
+  echo "$n" > ~/.offloadpc-target; export OFFLOAD_HOST="$n"; _offload_zenoh
+  if [ "$n" != local ] && ! grep -qx "$n" ~/.offloadpc-known 2>/dev/null; then echo "$n" >> ~/.offloadpc-known; fi
+  if [ "$n" = local ]; then echo "Using this PC only. Start a local ROS router once:  ros2 run rmw_zenoh_cpp rmw_zenohd"
+  elif offloadpc-online; then echo "Now using $_green $n"; else echo "Now using $_red $n (offline right now)"; fi
+  echo "(ROS nodes already running keep their old connection - restart them. Other terminals: run 'use-powerplant $n' or open a new one.)"
+}
+
 alias offloadpc='ssh -t "$OFFLOAD_USER@$OFFLOAD_HOST" "cd ~/ros2-remote/docker && docker compose exec dev bash"'
-# Remote power control + activity report (see processingoffloadPC/power.sh)
 offloadpc-power() { ssh -t "$OFFLOAD_USER@$OFFLOAD_HOST" "bash ~/ros2-remote/processingoffloadPC/power.sh $*"; }
-offloadpc-online() { timeout 4 bash -c "</dev/tcp/$OFFLOAD_HOST/22" 2>/dev/null; }
+offloadpc-exec()  { ssh -o ConnectTimeout=8 "$OFFLOAD_USER@$OFFLOAD_HOST" "bash ~/ros2-remote/processingoffloadPC/power.sh $*"; }
+
 start-nuclear-powerplant() {
-  echo "Starting the nuclear powerplant ($OFFLOAD_HOST)..."
+  echo "Starting nuclear powerplant: $OFFLOAD_HOST"
   if ! offloadpc-online; then
-    echo "It's offline (asleep or off). Wake it with Wake-on-LAN from its home network"
-    echo "  (MAC: $(cat ~/.offloadpc-mac 2>/dev/null || echo 'run offloadpc-mac while it is on'))"
-    echo "or next time use:  sleep-nuclear-powerplant HH:MM   (sleeps + wakes itself at HH:MM)"
-    return 1
+    if _offload_relay >/dev/null; then wake-nuclear-powerplant || return 1; echo "Giving Ubuntu + Docker 20 s to start..."; sleep 20
+    else
+      echo "It's offline (asleep or off). Wake it with Wake-on-LAN from its home network,"
+      echo "set up a wake relay (README > Wake over the internet: set-wake-relay), or next time"
+      echo "use  sleep-nuclear-powerplant HH:MM  (it wakes itself at HH:MM)."
+      return 1
+    fi
   fi
+  offloadpc-exec mac > ~/.offloadpc-mac-"$OFFLOAD_HOST" 2>/dev/null
   offloadpc-power start && offloadpc
 }
 # sleep-nuclear-powerplant [HH:MM] [--after-finish] [--force]
@@ -72,11 +116,38 @@ sleep-nuclear-powerplant() {
 }
 sleep-after-finish() { sleep-nuclear-powerplant --after-finish "$@"; }
 show-running-processes() { offloadpc-power processes; }
-offloadpc-mac() { offloadpc-power mac | tee ~/.offloadpc-mac; }
+offloadpc-mac() { offloadpc-exec mac | tee ~/.offloadpc-mac-"$OFFLOAD_HOST"; }
+offloadpc-resume() { offloadpc-power resume; }
+offloadpc-guardian() { offloadpc-power guardian "${1:-status}"; }
+offloadpc-notifications() { if [ "${1:-}" = test ]; then offloadpc-power notify-test; else offloadpc-power notify-info; fi; }
 alias offloadpc-status='offloadpc-power status'
 alias offloadpc-off='offloadpc-power off'
 alias offloadpc-restart='offloadpc-power restart'
 alias offloadpc-cancel='offloadpc-power cancel'
+
+# --- Wake over the internet: a "wake relay" = any always-on Tailscale device on the powerplant's
+#     home network (Raspberry Pi, old laptop...). It sends the Wake-on-LAN packet for you.
+_offload_relay() { local r; r=$(awk -v h="$OFFLOAD_HOST" '$1==h{print $2}' ~/.offloadpc-wake 2>/dev/null | tail -1); [ -n "$r" ] && echo "$r"; }
+set-wake-relay() {
+  if [ -z "${1:-}" ]; then echo "Usage: set-wake-relay user@device   (a Tailscale device on $OFFLOAD_HOST's home network)"; return 1; fi
+  { grep -v "^$OFFLOAD_HOST " ~/.offloadpc-wake 2>/dev/null; echo "$OFFLOAD_HOST $1"; } > ~/.offloadpc-wake.tmp && mv ~/.offloadpc-wake.tmp ~/.offloadpc-wake
+  echo "Wake relay for $OFFLOAD_HOST: $1"
+}
+_WOL_PY='import socket,sys;m=bytes.fromhex(sys.argv[1].replace(":","").replace("-",""));s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1);[s.sendto(b"\xff"*6+m*16,("255.255.255.255",p)) for p in (7,9)]'
+wake-nuclear-powerplant() {
+  local relay mac i
+  relay=$(_offload_relay) || { echo "No wake relay for $OFFLOAD_HOST yet: set-wake-relay user@device (see README)"; return 1; }
+  mac=$(grep -oiE '([0-9a-f]{2}[:-]){5}[0-9a-f]{2}' ~/.offloadpc-mac-"$OFFLOAD_HOST" 2>/dev/null | head -1)
+  if [ -z "$mac" ]; then echo "MAC address unknown - run offloadpc-mac once while $OFFLOAD_HOST is on."; return 1; fi
+  echo "Waking $OFFLOAD_HOST ($mac) via $relay ..."
+  ssh -o ConnectTimeout=8 "$relay" "python3 -c '$_WOL_PY' $mac" || { echo "Couldn't reach the relay $relay."; return 1; }
+  echo -n "Waiting for it to come online"
+  for i in $(seq 1 36); do
+    if offloadpc-online; then echo " - $_green online!"; return 0; fi
+    echo -n .; sleep 5
+  done
+  echo " - $_red not online after 3 min (Wake-on-LAN enabled in its BIOS? wired network?)"; return 1
+}
 # <<< ros2-remote <<<
 EOF
 if [ -n "$old_user" ]; then sed -i "s/^export OFFLOAD_USER=\"\$USER\"/export OFFLOAD_USER=\"$old_user\"/" ~/.bashrc; fi
@@ -85,7 +156,7 @@ echo "== 4. Check connection =="
 if getent hosts processingoffloadpc >/dev/null; then
   echo "OK: processingoffloadpc found via Tailscale."
 else
-  echo "WARNING: processingoffloadpc not reachable. Is Tailscale signed in on Windows, and is the offload PC on?"
+  echo "NOTE: processingoffloadpc not found yet (fine if your powerplant has another name or is set up later)."
 fi
 
 echo
@@ -96,3 +167,4 @@ echo "  start-nuclear-powerplant   # start ROS on the offload PC + open a shell 
 echo "  show-running-processes     # what's running? safe to power off?"
 echo "  sleep-nuclear-powerplant   # put it to sleep (add 22:30 to wake it at 22:30)"
 echo "  sleep-nuclear-powerplant --after-finish   # sleep automatically when your work is done"
+echo "  list-powerplants / use-powerplant NAME     # choose which PC does the heavy work"

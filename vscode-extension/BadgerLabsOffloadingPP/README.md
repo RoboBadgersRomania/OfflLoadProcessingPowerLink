@@ -1,38 +1,39 @@
 # BadgerLabsOffloadingPP
 
 VS Code extension for **[OffLoad Processing Power Link](https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink)**:
-use a remote GPU PC (the *processing offload PC*) for heavy ROS 2 work, straight from VS Code.
+use remote GPU PCs (*nuclear powerplants*) for heavy ROS 2 work, straight from VS Code.
 
 ## Features
 
-- **Status bar**: `Offload: GPU 12%` / `Offload: offline`, auto-refreshing. Click it for all actions.
-- **Start nuclear powerplant**: makes sure ROS is running on the offload PC and opens a ROS shell there.
-- **Show running processes**: GPU/CPU load, someone using the PC?, containers, top processes,
+- **Status bar**: `🟢 RTX 4090 · 12%` (reachable, GPU load), `🟡 RTX 4090 · paused` (owner using it),
+  `🔴 GTX 1080` (offline). Click it for all actions.
+- **Choose nuclear powerplant**: like picking an AI model, every PC listed by its specs
+  (e.g. `🟢 GTX 1080 · i7-9700K · 16 GB DDR4 3333MHz`) with a live green/red reachability dot.
+- **Start nuclear powerplant**: wakes it via a wake relay if needed, starts ROS, opens a ROS shell.
+  Warns if someone used that PC in the last 10 minutes.
+- **Show running processes**: GPU/CPU load, owner at the keyboard?, containers, top processes,
   ROS nodes, tmux jobs, and a verdict: *IDLE, safe to power off* or *BUSY*.
-- **Sleep nuclear powerplant** (optionally *and wake at HH:MM*): checks it's idle first, asks if busy.
-- **Sleep nuclear powerplant after work finishes**: sleeps by itself once idle 5 min in a row
-  (optional wake time; status; cancel).
-- **Open offload PC workspace**: new VS Code window on the offload PC via Remote-SSH.
-- **ROS shell on offload PC**: terminal inside the GPU ROS container.
-- **ROS shell on this PC**: Ubuntu (WSL) terminal for Gazebo / RViz / light nodes.
-- **Build workspace on offload PC**: `colcon build --symlink-install` in the container.
-- **Foxglove**: opens the viewer connected to `ws://processingoffloadpc:8765`.
-- **Power**: restart, shut down (busy check + confirmation), cancel, show MAC for Wake-on-LAN.
+- **Sleep nuclear powerplant** (now / *and wake at HH:MM* / *after work finishes*): checks it's idle first.
+- **Guardian**: if the PC's owner starts using it while your job runs, the job is paused and you get
+  a VS Code warning (and a phone notification); it resumes when they leave. **Resume paused job** forces it.
+- **Wake nuclear powerplant**: Wake-on-LAN through an always-on device on its network.
+- **Open powerplant workspace** (Remote-SSH), **ROS shells**, **colcon build**, **Foxglove**, restart / shut down.
 
 All commands are in the Command Palette (`Ctrl+Shift+P`) under **BadgerLabs:**.
 
 ## Requirements
 
-- The repo's `SETUP-processingoffloadPC.cmd` (offload PC) and `SETUP-my-PC.cmd` (this PC) have run.
+- The repo's `SETUP-processingoffloadPC.cmd` (each powerplant) and `SETUP-my-PC.cmd` (this PC) have run.
 - Tailscale signed in on this PC with the same account.
-- Optional: **Remote - SSH** extension for "Open offload PC workspace".
+- Optional: **Remote - SSH** extension for "Open powerplant workspace".
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
-| `badgerlabs.host` | `processingoffloadpc` | Tailscale name of the offload PC |
-| `badgerlabs.remoteUser` | *(asked once)* | Your Ubuntu username on the offload PC |
-| `badgerlabs.remoteRepoPath` | `~/ros2-remote` | Repo location inside Ubuntu on the offload PC |
+| `badgerlabs.host` | `processingoffloadpc` | Powerplant in use (set by *Choose nuclear powerplant*) |
+| `badgerlabs.remoteUser` | *(asked once)* | Your Ubuntu username on the powerplants |
+| `badgerlabs.remoteRepoPath` | `~/ros2-remote` | Repo location inside Ubuntu on the powerplants |
 | `badgerlabs.wslDistro` | `Ubuntu-24.04` | Local WSL distro for "ROS shell on this PC" |
 | `badgerlabs.statusIntervalSeconds` | `60` | Status refresh interval (0 = manual) |
+| `badgerlabs.wakeRelays` | `{}` | Wake relay per powerplant, e.g. `{"processingoffloadpc": "pi@wakepi"}` |

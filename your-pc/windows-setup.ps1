@@ -1,27 +1,15 @@
-# Run on YOUR laptop / desktop in an ADMIN PowerShell, after `wsl --install -d Ubuntu-24.04` + reboot
-# and after Ubuntu has been opened once (username/password created).
-#   powershell -ExecutionPolicy Bypass -File .\windows-setup.ps1
+# Windows side of YOUR laptop / desktop. Run as ADMIN (setup.ps1 does this).
+#   powershell -ExecutionPolicy Bypass -File .\your-pc\windows-setup.ps1
+. "$PSScriptRoot\..\common.ps1"
 
-# 1. WSL settings: mirrored networking so Ubuntu uses Windows' Tailscale connection directly.
+# 1. WSL settings. NAT networking (WSL's default) reaches your Tailscale network through Windows,
+#    and stays compatible if this PC is also a nuclear powerplant. DNS tunneling resolves Tailscale names.
 $ramGB = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-$wslRam = [math]::Max(4, $ramGB - 4)     # leave 4 GB for Windows
-$path = "$env:USERPROFILE\.wslconfig"
-if (Test-Path $path) {
-  Copy-Item $path "$path.backup" -Force
-  Write-Host "Existing .wslconfig backed up to $path.backup"
-}
-$wslconfig = @"
-[wsl2]
-memory=${wslRam}GB
-swap=8GB
-networkingMode=mirrored
-dnsTunneling=true
-"@
-Set-Content -Path $path -Value $wslconfig -Encoding ascii
-Write-Host "Wrote $path (WSL RAM: ${wslRam} GB, mirrored networking)"
+Update-WslConfig @{ memory = "$([math]::Max(4, $ramGB - 4))GB"; swap = '8GB'; dnsTunneling = 'true' }
 
-# 2. Tailscale for Windows (sign in with the SAME account as on the offload PC).
-if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) {
+# 2. Tailscale for Windows (sign in with the SAME account as on the nuclear powerplant(s)).
+$tsExe = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
+if (-not (Get-Command tailscale -ErrorAction SilentlyContinue) -and -not (Test-Path $tsExe)) {
   winget install -e --id Tailscale.Tailscale --accept-source-agreements --accept-package-agreements
   Write-Host "Tailscale installed: sign in from its tray icon."
 } else {
@@ -29,4 +17,3 @@ if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) {
 }
 
 wsl --shutdown
-Write-Host "Done. Open Ubuntu and run:  bash your-pc/setup-ros-client.sh"

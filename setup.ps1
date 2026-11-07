@@ -18,6 +18,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
   exit
 }
 
+. "$Kit\common.ps1"
 function Step($n, $text) { Write-Host "`n=== [$n/5] $text ===" -ForegroundColor Cyan }
 function Fail($text) { Write-Host "`n$text" -ForegroundColor Yellow; exit 1 }
 function Clean($out) { (($out -replace "`0", '') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
@@ -105,31 +106,76 @@ if (-not (Get-WslUser)) {
 }
 Write-Host "Ubuntu user: $(Get-WslUser)"
 
-# 4. Windows-side settings (RAM for WSL, networking, Tailscale / keep-alive)
-Step 4 "Windows settings"
-if ($Role -eq 'offload') { & "$Kit\processingoffloadPC\windows-setup.ps1" } else { & "$Kit\your-pc\windows-setup.ps1" }
+$WslUser = Get-WslUser
 
-# 5. Copy kit into Ubuntu and install everything there
+# 4. Windows-side settings (RAM for WSL, Tailscale / agent, power)
+Step 4 "Windows settings"
+if ($Role -eq 'offload') {
+  # Name + "whose PC is this?" (asked once, remembered for reruns)
+  Ensure-OffloadDir
+  $answersFile = Join-Path $OffloadDir 'powerplant.json'
+  if (Test-Path $answersFile) {
+    $answers = Get-Content $answersFile -Raw | ConvertFrom-Json
+  } else {
+    Write-Host "Name for this nuclear powerplant on your network:" -ForegroundColor Yellow
+    Write-Host "  just Enter = processingoffloadpc   or a short name, e.g. 4090 or desktop -> processingoffloadpc-4090"
+    $short = ((Read-Host "Name") -replace '[^A-Za-z0-9-]', '').ToLower()
+    $name = if ($short) { "processingoffloadpc-$short" } else { 'processingoffloadpc' }
+    Write-Host "`nWhose PC is this?" -ForegroundColor Yellow
+    Write-Host "  1 = someone else's (privacy: no access to their files; your jobs pause while they use the PC)"
+    Write-Host "  2 = mine (full access, no auto-pause)"
+    $own = Read-Host "1 or 2 [1]"
+    $answers = [pscustomobject]@{ Name = $name; Privacy = ($own -ne '2') }
+    $answers | ConvertTo-Json | Set-Content $answersFile -Encoding utf8
+  }
+  Write-Host "Powerplant: $($answers.Name)   privacy mode: $(if ($answers.Privacy) { 'ON' } else { 'OFF' })"
+  & "$Kit\processingoffloadPC\windows-setup.ps1" -WslUser $WslUser -Distro $Distro
+} else {
+  & "$Kit\your-pc\windows-setup.ps1"
+}
+
+# 5. Copy kit into Ubuntu (through wsl.exe - no Windows drive access needed) and install there
 Step 5 "Installing inside Ubuntu (asks for your Ubuntu password; takes 10-30 min)"
-$src = Clean (wsl.exe -d $Distro --exec wslpath -a "$Kit")
-WslBash "mkdir -p ~/ros2-remote && cp -r '$src'/. ~/ros2-remote/ && find ~/ros2-remote -name '*.sh' -exec sed -i 's/\r`$//' {} +"
-if ($LASTEXITCODE -ne 0) { Fail "Could not copy the kit into Ubuntu." }
+WslBash 'mkdir -p ~/ros2-remote'
+Push-Location $Kit
+cmd.exe /c "tar --exclude=.git -cf - . | wsl.exe -d $Distro --exec tar -C /home/$WslUser/ros2-remote -xf -"
+$copyRc = $LASTEXITCODE
+Pop-Location
+WslBash "find ~/ros2-remote -name '*.sh' -exec sed -i 's/\r`$//' {} +"
+if ($copyRc -ne 0) { Fail "Could not copy the kit into Ubuntu." }
 
 if ($Role -eq 'offload') {
-  WslBash 'bash ~/ros2-remote/processingoffloadPC/setup-wsl.sh'
+  $envs = "POWERPLANT_NAME=$($answers.Name) PRIVACY=$(if ($answers.Privacy) { 1 } else { 0 })"
+  WslBash "$envs bash ~/ros2-remote/processingoffloadPC/setup-wsl.sh"
   if ($LASTEXITCODE -ne 0) {                          # e.g. systemd had to be enabled -> restart WSL, retry once
     wsl.exe --shutdown
-    WslBash 'bash ~/ros2-remote/processingoffloadPC/setup-wsl.sh'
+    WslBash "$envs bash ~/ros2-remote/processingoffloadPC/setup-wsl.sh"
     if ($LASTEXITCODE -ne 0) { Fail "Ubuntu setup failed (see messages above). Fix it and run this SETUP file again." }
   }
+  Write-Host "`nRestarting Ubuntu with the new settings and starting the Windows agent ..."
+  wsl.exe --shutdown
+  Start-ScheduledTask -TaskName 'OffloadPC agent'
+  $alive = { WslBash 'h=$(cat ~/.offload-agent/heartbeat 2>/dev/null); [ -n "$h" ] && [ $(( $(date +%s) - h )) -lt 20 ]'; $LASTEXITCODE -eq 0 }
+  $ok = $false; for ($i = 0; $i -lt 20 -and -not $ok; $i++) { Start-Sleep 3; $ok = & $alive }
+  if (-not $ok) {
+    Write-Host "Agent didn't start hidden - switching to the fallback launcher ..."
+    & "$Kit\processingoffloadPC\windows-setup.ps1" -WslUser $WslUser -Distro $Distro -AgentOnly -FallbackLauncher
+    Start-ScheduledTask -TaskName 'OffloadPC agent'
+    for ($i = 0; $i -lt 20 -and -not $ok; $i++) { Start-Sleep 3; $ok = & $alive }
+  }
+  if ($ok) { Write-Host "OK  Windows agent running" } else { Write-Host "WARNING: Windows agent not running - power commands won't work. Log out and in, then run this again." -ForegroundColor Yellow }
+
   Write-Host "`nBuilding and starting the ROS 2 containers (first time downloads ~5 GB)..."
   WslBash 'cd ~/ros2-remote/docker && sudo docker compose up -d --build && sudo docker compose ps'
   if ($LASTEXITCODE -ne 0) { Fail "Starting containers failed. Run this SETUP file again." }
-  Write-Host "`nDONE. This PC now runs ROS 2 in the background as 'processingoffloadpc'." -ForegroundColor Green
+  Add-Role 'offload'
+  Write-Host "`nDONE. This PC now runs ROS 2 in the background as '$($answers.Name)'." -ForegroundColor Green
   Write-Host "Keep it on and logged in (locking the screen is fine). You can close this window."
+  WslBash 'grep -o "^NTFY_TOPIC=[^ ]*" ~/.offload-agent/guardian.conf | sed "s/NTFY_TOPIC=/Phone notifications: ntfy app -> subscribe to /"'
 } else {
   WslBash 'bash ~/ros2-remote/your-pc/setup-ros-client.sh'
   if ($LASTEXITCODE -ne 0) { Fail "Ubuntu setup failed (see messages above). Run this SETUP file again." }
+  Add-Role 'me'
 
   # VS Code extensions (only if VS Code is installed; failures are not fatal)
   if (Get-Command code -ErrorAction SilentlyContinue) {
@@ -154,6 +200,7 @@ if ($Role -eq 'offload') {
   Write-Host "  ros2 topic list            (topics from both PCs)"
   Write-Host "  show-running-processes     (what's running there? safe to power off?)"
   Write-Host "  sleep-nuclear-powerplant   (sleep it; --after-finish = sleep when your work is done)"
-  Write-Host "In VS Code: click 'Offload' in the status bar (bottom left)."
+  Write-Host "  list-powerplants / use-powerplant NAME   (choose which PC does the heavy work)"
+  Write-Host "In VS Code: click the powerplant (green/red dot) in the status bar, bottom left."
   Write-Host "Make sure Tailscale (tray icon) is signed in with the same account as the offload PC."
 }
