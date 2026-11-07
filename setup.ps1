@@ -130,8 +130,30 @@ if ($Role -eq 'offload') {
 } else {
   WslBash 'bash ~/ros2-remote/your-pc/setup-ros-client.sh'
   if ($LASTEXITCODE -ne 0) { Fail "Ubuntu setup failed (see messages above). Run this SETUP file again." }
+
+  # VS Code extensions (only if VS Code is installed; failures are not fatal)
+  if (Get-Command code -ErrorAction SilentlyContinue) {
+    Write-Host "`nInstalling VS Code extensions ..."
+    $exts = 'ms-vscode-remote.remote-wsl', 'ms-vscode-remote.remote-ssh', 'ms-vscode-remote.remote-containers',
+            'Ranch-Hand-Robotics.rde-ros-2', 'ms-python.python', 'ms-vscode.cpptools', 'ms-vscode.cmake-tools'
+    foreach ($ext in $exts) {
+      code --install-extension $ext --force *> $null
+      if ($LASTEXITCODE -eq 0) { Write-Host "OK  $ext" } else { Write-Host "--  $ext (install it later from the Extensions panel)" }
+    }
+    $vsix = Get-ChildItem "$Kit\vscode-extension\*.vsix" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+    if ($vsix) {
+      code --install-extension $vsix.FullName --force *> $null
+      if ($LASTEXITCODE -eq 0) { Write-Host "OK  BadgerLabsOffloadingPP ($($vsix.Name))" }
+    }
+  } else {
+    Write-Host "`nVS Code not found - skipping VS Code extensions (see README > VS Code)."
+  }
+
   Write-Host "`nDONE. Open 'Ubuntu 24.04' from the Start menu and test:" -ForegroundColor Green
-  Write-Host "  ros2 topic list     (topics from both PCs)"
-  Write-Host "  offloadpc             (shell on the offload PC)"
+  Write-Host "  start-nuclear-powerplant   (start ROS on the offload PC + open a shell there)"
+  Write-Host "  ros2 topic list            (topics from both PCs)"
+  Write-Host "  show-running-processes     (what's running there? safe to power off?)"
+  Write-Host "  sleep-nuclear-powerplant   (sleep it; --after-finish = sleep when your work is done)"
+  Write-Host "In VS Code: click 'Offload' in the status bar (bottom left)."
   Write-Host "Make sure Tailscale (tray icon) is signed in with the same account as the offload PC."
 }

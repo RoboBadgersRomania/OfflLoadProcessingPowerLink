@@ -37,16 +37,46 @@ export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/processingoffloadpc:7447"];mode="client"'
 # Your Ubuntu username ON THE offload PC (change if it differs from this PC's).
 export OFFLOAD_USER="$USER"
-alias offloadpc='ssh -t "$OFFLOAD_USER@processingoffloadpc" "cd ~/ros2-remote/docker && docker compose exec dev bash"'
-# Remote power control (see processingoffloadPC/power.sh)
-offloadpc-power() { ssh -t "$OFFLOAD_USER@processingoffloadpc" "bash ~/ros2-remote/processingoffloadPC/power.sh $*"; }
+export OFFLOAD_HOST=processingoffloadpc
+alias offloadpc='ssh -t "$OFFLOAD_USER@$OFFLOAD_HOST" "cd ~/ros2-remote/docker && docker compose exec dev bash"'
+# Remote power control + activity report (see processingoffloadPC/power.sh)
+offloadpc-power() { ssh -t "$OFFLOAD_USER@$OFFLOAD_HOST" "bash ~/ros2-remote/processingoffloadPC/power.sh $*"; }
+offloadpc-online() { timeout 4 bash -c "</dev/tcp/$OFFLOAD_HOST/22" 2>/dev/null; }
+start-nuclear-powerplant() {
+  echo "Starting the nuclear powerplant ($OFFLOAD_HOST)..."
+  if ! offloadpc-online; then
+    echo "It's offline (asleep or off). Wake it with Wake-on-LAN from its home network"
+    echo "  (MAC: $(cat ~/.offloadpc-mac 2>/dev/null || echo 'run offloadpc-mac while it is on'))"
+    echo "or next time use:  sleep-nuclear-powerplant HH:MM   (sleeps + wakes itself at HH:MM)"
+    return 1
+  fi
+  offloadpc-power start && offloadpc
+}
+# sleep-nuclear-powerplant [HH:MM] [--after-finish] [--force]
+#   (nothing)        sleep now (asks first if it's busy)
+#   22:30            sleep now, wake up at 22:30
+#   --after-finish   sleep automatically once the running work is done (add 22:30 to wake then too;
+#                    "--after-finish status" / "--after-finish cancel" to check or stop it)
+sleep-nuclear-powerplant() {
+  local after=0 t="" extra=()
+  for a in "$@"; do
+    case "$a" in
+      --after-finish|--when-done|-a) after=1 ;;
+      --force) extra+=(--force) ;;
+      *) t="$a" ;;
+    esac
+  done
+  if [ "$after" = 1 ]; then offloadpc-power sleep-after-finish $t
+  elif [ -n "$t" ]; then offloadpc-power sleep-until "$t" "${extra[@]}"
+  else offloadpc-power sleep "${extra[@]}"; fi
+}
+sleep-after-finish() { sleep-nuclear-powerplant --after-finish "$@"; }
+show-running-processes() { offloadpc-power processes; }
+offloadpc-mac() { offloadpc-power mac | tee ~/.offloadpc-mac; }
 alias offloadpc-status='offloadpc-power status'
-alias offloadpc-sleep='offloadpc-power sleep'
-alias offloadpc-sleep-until='offloadpc-power sleep-until'
 alias offloadpc-off='offloadpc-power off'
 alias offloadpc-restart='offloadpc-power restart'
 alias offloadpc-cancel='offloadpc-power cancel'
-alias offloadpc-mac='offloadpc-power mac'
 # <<< ros2-remote <<<
 EOF
 if [ -n "$old_user" ]; then sed -i "s/^export OFFLOAD_USER=\"\$USER\"/export OFFLOAD_USER=\"$old_user\"/" ~/.bashrc; fi
@@ -62,5 +92,7 @@ echo
 echo "Done. Open a NEW Ubuntu terminal, then test:"
 echo "  ros2 topic list            # should include topics from the offload PC"
 echo "  offloadpc                  # shell inside the dev container on the offload PC"
-echo "  offloadpc-status           # is it on? GPU load"
-echo "  offloadpc-sleep            # put it to sleep (offloadpc-sleep-until 22:30 = sleep + auto-wake)"
+echo "  start-nuclear-powerplant   # start ROS on the offload PC + open a shell there"
+echo "  show-running-processes     # what's running? safe to power off?"
+echo "  sleep-nuclear-powerplant   # put it to sleep (add 22:30 to wake it at 22:30)"
+echo "  sleep-nuclear-powerplant --after-finish   # sleep automatically when your work is done"

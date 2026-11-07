@@ -1,0 +1,71 @@
+{
+  "name": "badgerlabs-offloading-pp",
+  "displayName": "BadgerLabsOffloadingPP",
+  "description": "Offload ROS 2 processing power to a remote GPU PC: live status, one-click connect, remote build, ROS shells, Foxglove, and remote sleep / wake / shutdown.",
+  "version": "0.1.0",
+  "publisher": "robobadgers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink"
+  },
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "keywords": ["ros", "ros2", "robotics", "remote", "gpu", "offload", "tailscale"],
+  "extensionKind": ["ui"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "badgerlabs.menu", "title": "Show menu", "category": "BadgerLabs" },
+      { "command": "badgerlabs.start", "title": "Start nuclear powerplant", "category": "BadgerLabs" },
+      { "command": "badgerlabs.processes", "title": "Show running processes", "category": "BadgerLabs" },
+      { "command": "badgerlabs.status", "title": "Offload PC status", "category": "BadgerLabs" },
+      { "command": "badgerlabs.openRemote", "title": "Open offload PC workspace (Remote-SSH)", "category": "BadgerLabs" },
+      { "command": "badgerlabs.rosShell", "title": "Open ROS shell on offload PC", "category": "BadgerLabs" },
+      { "command": "badgerlabs.localShell", "title": "Open ROS shell on this PC (Ubuntu)", "category": "BadgerLabs" },
+      { "command": "badgerlabs.build", "title": "Build workspace on offload PC (colcon)", "category": "BadgerLabs" },
+      { "command": "badgerlabs.restartRos", "title": "Restart ROS containers on offload PC", "category": "BadgerLabs" },
+      { "command": "badgerlabs.foxglove", "title": "Open Foxglove viewer", "category": "BadgerLabs" },
+      { "command": "badgerlabs.sleep", "title": "Sleep nuclear powerplant", "category": "BadgerLabs" },
+      { "command": "badgerlabs.sleepUntil", "title": "Sleep nuclear powerplant and wake at...", "category": "BadgerLabs" },
+      { "command": "badgerlabs.sleepAfterFinish", "title": "Sleep nuclear powerplant after work finishes", "category": "BadgerLabs" },
+      { "command": "badgerlabs.shutdown", "title": "Shut down offload PC", "category": "BadgerLabs" },
+      { "command": "badgerlabs.restart", "title": "Restart offload PC", "category": "BadgerLabs" },
+      { "command": "badgerlabs.cancel", "title": "Cancel pending shutdown/restart", "category": "BadgerLabs" },
+      { "command": "badgerlabs.mac", "title": "Show offload PC MAC address (Wake-on-LAN)", "category": "BadgerLabs" },
+      { "command": "badgerlabs.settings", "title": "Settings", "category": "BadgerLabs" },
+      { "command": "badgerlabs.readme", "title": "Open setup guide", "category": "BadgerLabs" }
+    ],
+    "configuration": {
+      "title": "BadgerLabsOffloadingPP",
+      "properties": {
+        "badgerlabs.host": {
+          "type": "string",
+          "default": "processingoffloadpc",
+          "description": "Tailscale name of the processing offload PC."
+        },
+        "badgerlabs.remoteUser": {
+          "type": "string",
+          "default": "",
+          "description": "Your Ubuntu username on the offload PC. Asked on first use if empty."
+        },
+        "badgerlabs.remoteRepoPath": {
+          "type": "string",
+          "default": "~/ros2-remote",
+          "description": "Where the repo lives inside Ubuntu on the offload PC."
+        },
+        "badgerlabs.wslDistro": {
+          "type": "string",
+          "default": "Ubuntu-24.04",
+          "description": "WSL distro on THIS PC used for local ROS shells."
+        },
+        "badgerlabs.statusIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "description": "How often the status bar checks the offload PC (0 = only on click)."
+        }
+      }
+    }
+  }
+}

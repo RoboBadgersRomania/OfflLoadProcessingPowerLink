@@ -45,9 +45,25 @@ Plus a free **Tailscale** account (tailscale.com, sign in with Google/GitHub/Mic
    - Your PC: click the **Tailscale tray icon → Log in** with the **same account**.
 5. Check both machines appear at **console.tailscale.com → Machines**.
 
+## Where do I type the commands?
+
+All commands in this README (`ros2 ...`, `start-nuclear-powerplant`, `offloadpc`, ...) are typed in an
+**Ubuntu terminal on your PC**, **not** in PowerShell or Command Prompt (they don't know these commands).
+Open one of these:
+
+| Option | How |
+|---|---|
+| **Ubuntu app** | Start menu → type **Ubuntu 24.04** → Enter. A black window with `name@PC:~$` appears |
+| **Windows Terminal** | Open *Terminal* → click the **˅** next to the tab → **Ubuntu-24.04** |
+| **VS Code** (recommended) | `Ctrl+Shift+P` → **BadgerLabs: Open ROS shell on this PC**, or connect VS Code to WSL (see [VS Code](#vs-code)) and open a terminal with ``Ctrl+` `` |
+
+You know you're in the right place when the prompt looks like `name@PC:~$`.
+Inside `offloadpc` the prompt changes to `root@...:/ws#`: that terminal now runs **on the offload PC**.
+Type `exit` to come back to your PC.
+
 ### Test it (on your PC, in "Ubuntu 24.04")
 ```bash
-offloadpc                              # you are now inside the offload PC's ROS container
+start-nuclear-powerplant               # starts ROS there and drops you into the offload PC's ROS container
 nvidia-smi                             #   shows the offload PC's GPU
 ros2 run demo_nodes_cpp talker         #   publishes /chatter on the offload PC
 ```
@@ -60,14 +76,32 @@ ros2 run demo_nodes_cpp listener       # prints "I heard: [Hello World: N]" -> l
 
 | Command | What it does |
 |---|---|
+| `start-nuclear-powerplant` | Checks it's online, starts the ROS containers, opens a ROS shell on it |
 | `offloadpc` | Shell inside the offload PC's ROS container (build/run heavy nodes there) |
 | `ros2 topic list` | Topics from **both** PCs |
+| `show-running-processes` | What's running there (GPU, CPU, ROS nodes, tmux jobs, someone at the PC?) + verdict **IDLE / BUSY** |
+| `sleep-nuclear-powerplant` | Put it to sleep (checks it's idle first, asks if busy) |
+| `sleep-nuclear-powerplant 22:30` | Sleep now, **wake automatically** at 22:30 (24 h clock) |
+| `sleep-nuclear-powerplant --after-finish` | **Sleep when your work is done**: waits in the background until it's idle 5 min in a row, then sleeps. Short form: `sleep-after-finish` |
+| `sleep-nuclear-powerplant --after-finish 07:00` | Same, and wake up again at 07:00 |
+| `sleep-after-finish status` / `sleep-after-finish cancel` | Is it waiting? (shows the last checks) / stop waiting, stay on |
 | `offloadpc-status` | Is it on? GPU name, load, memory, temperature, power |
-| `offloadpc-sleep` | Put the offload PC to sleep |
-| `offloadpc-sleep-until 22:30` | Sleep now, **wake automatically** at 22:30 (24 h clock) |
-| `offloadpc-off` / `offloadpc-restart` | Shut down / restart in 60 s |
+| `offloadpc-off` / `offloadpc-restart` | Shut down / restart in 60 s (busy check first) |
 | `offloadpc-cancel` | Cancel a pending shutdown/restart |
-| `offloadpc-mac` | Show its network MAC address (for Wake-on-LAN) |
+| `offloadpc-mac` | Show (and remember) its MAC address for Wake-on-LAN |
+
+`sleep-nuclear-powerplant`, `offloadpc-off` and `offloadpc-restart` count the PC as **busy** if
+the GPU is above 10%, CPU load is high, ROS nodes or `tmux` jobs are running, or someone used its
+keyboard/mouse in the last 10 minutes. Add `--force` to skip the check. A `tmux` session whose job
+has finished (only the shell is left) counts as idle, so this works with `--after-finish`:
+
+```bash
+offloadpc                                   # on the offload PC
+tmux new -s train                           # start a tmux session
+python train.py                             # long job...  then detach: Ctrl+B, then D
+exit
+sleep-nuclear-powerplant --after-finish     # back on your PC: it sleeps when train.py ends
+```
 
 **What runs where:**
 
@@ -81,14 +115,70 @@ ros2 run demo_nodes_cpp listener       # prints "I heard: [Hello World: N]" -> l
 - Send camera images **compressed** between PCs (`image_transport` → `compressed`).
 - Run simulations on the offload PC **headless** (`gz sim -s -r world.sdf`) and view them in
   **Foxglove** (foxglove.dev) → *Open connection* → `ws://processingoffloadpc:8765`.
-- Code comfortably: VS Code → *Remote - SSH* → `<ubuntu-user>@processingoffloadpc`.
+## VS Code
+
+VS Code is the most common editor for ROS 2 work. With this setup you use **two VS Code windows**:
+one for your PC (light work) and one connected to the offload PC (heavy work), plus the
+**BadgerLabsOffloadingPP** extension to control the offload PC.
+
+### 1. Extensions
+`SETUP-my-PC.cmd` installs these automatically if VS Code is installed. Otherwise install them from the Extensions panel (`Ctrl+Shift+X`):
+
+| Extension | Why |
+|---|---|
+| **WSL** (`ms-vscode-remote.remote-wsl`) | Open your PC's Ubuntu in VS Code |
+| **Remote - SSH** (`ms-vscode-remote.remote-ssh`) | Open the offload PC in VS Code |
+| **Dev Containers** (`ms-vscode-remote.remote-containers`) | Work *inside* the offload PC's ROS container |
+| **Robot Developer Extensions for ROS 2** (`Ranch-Hand-Robotics.rde-ros-2`) | ROS 2 launch/debug, URDF preview, ROS commands |
+| **Python**, **C/C++**, **CMake Tools** | Write ROS nodes in Python / C++ |
+| **BadgerLabsOffloadingPP** | This repo's extension (below) |
+
+Install BadgerLabsOffloadingPP by hand with:
+```powershell
+code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.1.0.vsix
+```
+
+### 2. Window 1: your PC (Gazebo, RViz, light nodes)
+- `Ctrl+Shift+P` → **WSL: Connect to WSL** (bottom-left corner shows `WSL: Ubuntu-24.04`).
+- *File → Open Folder* → your workspace (e.g. `/home/<you>/my_ws`).
+- Terminal: ``Ctrl+` `` → you are in Ubuntu on **your PC**. Run `ros2 launch ...`, `gz sim ...`, `rviz2` here.
+
+### 3. Window 2: the offload PC (heavy nodes, AI, builds)
+- `Ctrl+Shift+P` → **BadgerLabs: Open offload PC workspace** (opens `~/ros2-remote/ws` there).
+- First time only: pick **Linux** if asked, and open the Tailscale link if one appears in the terminal.
+- To work *inside* the ROS container (ROS + GPU available): `Ctrl+Shift+P` →
+  **Dev Containers: Attach to Running Container** → `docker-dev-1`.
+- Files in `ws/src` are the same inside and outside the container. Build with
+  **BadgerLabs: Build workspace on offload PC** or `colcon build --symlink-install` in the terminal.
+
+### 4. BadgerLabsOffloadingPP extension
+The status bar (bottom left) shows `Offload: GPU 12%`, `Offload: offline` or `Offload: login needed`.
+**Click it** for the menu, or use `Ctrl+Shift+P` → `BadgerLabs: ...`:
+
+| Command | Does |
+|---|---|
+| **Start nuclear powerplant** | Starts ROS on the offload PC and opens a ROS shell on it |
+| **Show running processes** | Activity report + IDLE/BUSY verdict (in the *BadgerLabs* output panel) |
+| **Sleep nuclear powerplant** / **...and wake at...** | Sleep (asks first if busy) / sleep + scheduled wake |
+| **Sleep nuclear powerplant after work finishes** | Sleep automatically when idle (optional wake time, status, cancel) |
+| **Open offload PC workspace** | New VS Code window on the offload PC (Remote-SSH) |
+| **Open ROS shell on offload PC** / **on this PC** | Terminals for heavy / light work |
+| **Build workspace on offload PC** | `colcon build --symlink-install` in the container |
+| **Open Foxglove viewer** | Foxglove connected to `ws://processingoffloadpc:8765` |
+| **Restart ROS containers**, **Restart PC**, **Shut down PC**, **Cancel**, **Show MAC** | Maintenance |
+
+First use asks for your **Ubuntu username on the offload PC** (saved in settings: `badgerlabs.remoteUser`).
+
+**A typical session:** click the status bar → *Start nuclear powerplant* → code in Window 2 →
+*Build workspace* → run heavy nodes in the offload terminal → run Gazebo/RViz in Window 1 →
+when done: *Show running processes* → *Sleep nuclear powerplant*.
 
 ## Remote power: sleep, wake, off
 
 | Situation | Can you control it remotely? |
 |---|---|
-| On → **sleep** | ✅ `offloadpc-sleep`. Windows stays logged in, so ROS resumes on wake |
-| Sleep → **on at a set time** | ✅ `offloadpc-sleep-until HH:MM` (Windows wake timer, enabled by setup) |
+| On → **sleep** | ✅ `sleep-nuclear-powerplant`. Windows stays logged in, so ROS resumes on wake |
+| Sleep → **on at a set time** | ✅ `sleep-nuclear-powerplant HH:MM` (Windows wake timer, enabled by setup) |
 | Sleep/off → **on right now** | ⚠️ Needs **Wake-on-LAN** from a device on the same home network (see below) |
 | On → **off / restart** | ✅ `offloadpc-off` / `offloadpc-restart`. After boot Windows must log in again |
 
@@ -113,6 +203,7 @@ its own network:
 | `processingoffloadPC/` | Offload PC: Windows settings, Docker + GPU + Tailscale install, `power.sh` |
 | `your-pc/` | Your PC: Windows settings + Tailscale, ROS 2 Jazzy + Zenoh install and shortcuts |
 | `docker/` | ROS 2 Jazzy image (Gazebo, Zenoh, Foxglove) + compose file for the offload PC |
+| `vscode-extension/` | **BadgerLabsOffloadingPP** VS Code extension: source, ready `.vsix`, `build-vsix.py` |
 | `ws/` | Your ROS 2 workspace (mounted at `/ws` in the container) |
 
 ## Doing it by hand (what the SETUP files do)

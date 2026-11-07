@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-rmw-zenoh-cpp \
         ros-jazzy-foxglove-bridge \
         python3-colcon-common-extensions \
-        python3-pip git nano htop \
+        python3-pip git nano htop tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Zenoh works across the internet/Tailscale; default DDS needs multicast (doesn't work over Tailscale).
