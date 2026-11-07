@@ -1,0 +1,50 @@
+# Start:   docker compose up -d --build
+# Shell:   docker compose exec dev bash
+# Stop:    docker compose down
+x-ros: &ros
+  build: .
+  image: ros2-offload:jazzy
+  network_mode: host
+  restart: unless-stopped
+
+services:
+  # Zenoh router: ROS 2 discovery hub (port 7447). Your PC's nodes connect here.
+  zenoh:
+    <<: *ros
+    command: bash -c "source /opt/ros/jazzy/setup.bash && ros2 run rmw_zenoh_cpp rmw_zenohd"
+
+  # Foxglove bridge: view topics/3D/plots from your PC at ws://processingoffloadpc:8765
+  foxglove:
+    <<: *ros
+    depends_on: [zenoh]
+    command: bash -c "source /opt/ros/jazzy/setup.bash && ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765"
+
+  # Dev container: where you build and run your code, with the offload PC GPU.
+  dev:
+    <<: *ros
+    depends_on: [zenoh]
+    ipc: host
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+    volumes:
+      - ../ws:/ws
+      - /usr/lib/wsl:/usr/lib/wsl          # WSL GPU libraries (OpenGL/Vulkan via D3D12)
+      - /tmp/.X11-unix:/tmp/.X11-unix      # optional: GUI on the offload PC's screen (WSLg)
+      - /mnt/wslg:/mnt/wslg
+    devices:
+      - /dev/dxg                           # WSL GPU device
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      - MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

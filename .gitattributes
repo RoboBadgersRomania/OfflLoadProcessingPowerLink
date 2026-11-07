@@ -1,0 +1,7 @@
+# Linux scripts must keep LF line endings even when cloned on Windows
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yaml      text eol=lf
+# Windows batch files need CRLF
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf

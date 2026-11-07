@@ -1,0 +1,8 @@
+# colcon build output
+ws/build/
+ws/install/
+ws/log/
+# editor / OS
+.vscode/
+*.swp
+Thumbs.db
