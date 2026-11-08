@@ -81,11 +81,13 @@ wsl.exe --set-default-version 2 | Out-Null
 
 # 2c. Ubuntu 24.04, as WSL 2
 if ((Get-Distros) -notcontains $Distro) {
-  Write-Host "Installing $Distro ..."
-  wsl.exe --install -d $Distro --no-launch
+  $loc = if (-not $OnSystemDrive) { '--location', "$Drive\WSL\$Distro" }   # its disk on the kit's drive
+  if ($loc) { New-Item -ItemType Directory -Force $loc[1] | Out-Null }
+  Write-Host "Installing $Distro $(if ($loc) { "to $($loc[1]) " })..."
+  wsl.exe --install -d $Distro --no-launch @loc
   if ((Get-Distros) -notcontains $Distro) {
     Write-Host "Trying direct download instead of the Microsoft Store ..."
-    wsl.exe --install -d $Distro --no-launch --web-download
+    wsl.exe --install -d $Distro --no-launch --web-download @loc
   }
   if ((Get-Distros) -notcontains $Distro) { Fail "Ubuntu did not install. REBOOT the PC and run again." }
 }

@@ -12,11 +12,16 @@ echo "== 1. ROS 2 apt repository =="
 sudo apt-get update
 sudo apt-get install -y software-properties-common curl
 sudo add-apt-repository -y universe
-ROS_APT_SOURCE_VERSION=$(curl -fsSL https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest \
-  | grep -F '"tag_name"' | awk -F'"' '{print $4}')
-curl -fsSL -o /tmp/ros2-apt-source.deb \
-  "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.${VERSION_CODENAME}_all.deb"
-sudo dpkg -i /tmp/ros2-apt-source.deb
+# Only the first time: once installed, apt keeps ros2-apt-source updated from packages.ros.org (no GitHub).
+if ! dpkg -s ros2-apt-source >/dev/null 2>&1; then
+  # --retry: GitHub sometimes answers 503/504 for a while; curl waits and tries again.
+  ROS_APT_SOURCE_VERSION=$(curl -fsSL --retry 5 --retry-delay 20 https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest \
+    | grep -F '"tag_name"' | awk -F'"' '{print $4}') \
+    || { echo "GitHub isn't answering right now (see githubstatus.com). Run the SETUP file again later."; exit 1; }
+  curl -fsSL --retry 5 --retry-delay 20 -o /tmp/ros2-apt-source.deb \
+    "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.${VERSION_CODENAME}_all.deb"
+  sudo dpkg -i /tmp/ros2-apt-source.deb
+fi
 
 echo "== 2. ROS 2 Jazzy desktop + Gazebo + Zenoh (~3 GB) =="
 sudo apt-get update
@@ -45,7 +50,8 @@ _offload_zenoh() {
 _offload_zenoh
 offloadpc-online() { [ "$OFFLOAD_HOST" != local ] && timeout 4 bash -c "</dev/tcp/${1:-$OFFLOAD_HOST}/22" 2>/dev/null; }
 _offload_names() {   # powerplants known to Tailscale (Windows) + ones you used before
-  { local ts="/mnt/c/Program Files/Tailscale/tailscale.exe"
+  { local ts
+    for ts in "$(command -v tailscale.exe)" "/mnt/c/Program Files/Tailscale/tailscale.exe" /mnt/?/Programs/Tailscale/tailscale.exe; do [ -x "$ts" ] && break; done
     [ -x "$ts" ] && "$ts" status 2>/dev/null | tr -d '\r' | awk '{print $2}' | grep '^processingoffloadpc'
     cat ~/.offloadpc-known 2>/dev/null; echo "$OFFLOAD_HOST"; } | grep -v '^local$' | grep -v '^$' | sort -u
 }

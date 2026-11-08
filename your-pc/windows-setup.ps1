@@ -8,9 +8,10 @@ $ramGB = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemor
 Update-WslConfig @{ memory = "$([math]::Max(4, $ramGB - 4))GB"; swap = '8GB'; dnsTunneling = 'true' }
 
 # 2. Tailscale for Windows (sign in with the SAME account as on the nuclear powerplant(s)).
-$tsExe = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
-if (-not (Get-Command tailscale -ErrorAction SilentlyContinue) -and -not (Test-Path $tsExe)) {
-  winget install -e --id Tailscale.Tailscale --accept-source-agreements --accept-package-agreements
+$tsDir = if ($OnSystemDrive) { Join-Path $env:ProgramFiles 'Tailscale' } else { "$Drive\Programs\Tailscale" }
+if (-not (Get-Command tailscale -ErrorAction SilentlyContinue) -and -not (Test-Path "$tsDir\tailscale.exe") -and
+    -not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")) {
+  winget install -e --id Tailscale.Tailscale --location $tsDir --accept-source-agreements --accept-package-agreements
   Write-Host "Tailscale installed: sign in from its tray icon."
 } else {
   Write-Host "Tailscale already installed."

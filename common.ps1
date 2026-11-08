@@ -1,6 +1,9 @@
 # Shared helpers for setup.ps1 / uninstall.ps1 / windows-setup.ps1 (dot-sourced, not run).
-# Everything this project stores on Windows lives in %LOCALAPPDATA%\OffloadPC.
-$OffloadDir = Join-Path $env:LOCALAPPDATA 'OffloadPC'
+# Installs go on the drive this kit sits on ($Drive, e.g. X:): Ubuntu, WSL swap, Tailscale, $OffloadDir.
+# Kit on the system drive (C:) = the usual Windows places, as before.
+$Drive = Split-Path -Qualifier $PSScriptRoot
+$OnSystemDrive = $Drive -eq $env:SystemDrive
+$OffloadDir = if ($OnSystemDrive) { Join-Path $env:LOCALAPPDATA 'OffloadPC' } else { "$Drive\OffloadPC" }
 function Ensure-OffloadDir { New-Item -ItemType Directory -Force -Path $OffloadDir | Out-Null }
 
 # Which roles are installed on this PC ("offload", "me") - so uninstall knows when it's the last one.
@@ -23,6 +26,10 @@ function Remove-Role([string]$r) {
 # (a PC can be both roles). The original file is backed up once so uninstall can restore it.
 function Update-WslConfig([hashtable]$Set) {
   Ensure-OffloadDir
+  if (-not $OnSystemDrive) {   # otherwise WSL puts its swap file in %TEMP% on C:
+    New-Item -ItemType Directory -Force "$Drive\WSL" | Out-Null
+    $Set['swapFile'] = "$Drive\\WSL\\swap.vhdx"
+  }
   $path = Join-Path $env:USERPROFILE '.wslconfig'
   $backup = Join-Path $OffloadDir 'wslconfig.original'
   $created = Join-Path $OffloadDir 'wslconfig.created'

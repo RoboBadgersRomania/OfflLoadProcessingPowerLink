@@ -41,10 +41,14 @@ going to sleep by itself (so it stays reachable), fans during heavy jobs. **Ask 
 | OS | Windows 10 22H2 / Windows 11 | Windows 10 22H2 / Windows 11 |
 | GPU | anything that runs Gazebo/RViz | NVIDIA (RTX recommended), current driver |
 | RAM | 16 GB+ | 16 GB+ (more = bigger jobs) |
-| Disk | ~30 GB free on C: | ~60 GB free on C: |
+| Disk | ~30 GB free | ~60 GB free |
 | BIOS | virtualization (VT-x / SVM) on | virtualization on; Wake-on-LAN on (optional) |
 
 Plus a free **Tailscale** account (tailscale.com, sign in with Google/GitHub/Microsoft).
+
+**Which drive?** Setup installs on the drive you extract this kit to. Kit on `D:\` or `X:\` →
+Ubuntu (`X:\WSL\Ubuntu-24.04`), its swap file, Windows Tailscale (`X:\Programs\Tailscale`) and
+the settings folder (`X:\OffloadPC`) all go there, keeping C: free. Kit on C: → the usual Windows places.
 
 ## Quick start
 

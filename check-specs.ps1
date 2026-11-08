@@ -31,5 +31,5 @@ $global:LASTEXITCODE = 0
 "--- Ready check ---"
 if ([int]$os.BuildNumber -lt 19045) { "X  Windows too old: need Windows 10 22H2 or Windows 11" } else { "OK Windows version" }
 if ($vt -eq $false) { "X  Turn on virtualization (Intel VT-x / AMD SVM) in BIOS" } else { "OK Virtualization" }
-$c = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-if ($c.FreeSpace/1GB -lt 60) { "X  Free up space on C: (need ~60 GB for WSL + ROS image)" } else { "OK Disk space" }
+$c = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$(Split-Path -Qualifier $PSScriptRoot)'"   # setup installs on the kit's drive
+if ($c.FreeSpace/1GB -lt 60) { "X  Free up space on $($c.DeviceID) (need ~60 GB for WSL + ROS image)" } else { "OK Disk space on $($c.DeviceID)" }
