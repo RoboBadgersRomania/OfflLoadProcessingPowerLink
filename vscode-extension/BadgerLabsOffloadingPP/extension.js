@@ -118,7 +118,9 @@ function discover() {
         resolve(String(stdout).split(/\r?\n/).map((l) => l.trim().split(/\s+/)[1]).filter((n) => n && n.startsWith(PREFIX)));
       });
     };
-    tryExe(['tailscale', 'C:\\Program Files\\Tailscale\\tailscale.exe']);
+    const fs = require('fs');   // setup may install Tailscale on the kit's drive (X:\Programs\Tailscale)
+    const onDrives = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((d) => `${d}:\\Programs\\Tailscale\\tailscale.exe`).filter((p) => fs.existsSync(p));
+    tryExe(['tailscale', 'C:\\Program Files\\Tailscale\\tailscale.exe', ...onDrives]);
   });
 }
 

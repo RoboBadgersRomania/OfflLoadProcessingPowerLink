@@ -81,8 +81,10 @@ def ssh(user, host, cmd, timeout=30):
 
 def discover():
     names = set()
-    ts = '/mnt/c/Program Files/Tailscale/tailscale.exe'
-    if os.path.exists(ts):
+    import glob   # Windows Tailscale: PATH, C:/Program Files, or X:/Programs on the kit's drive
+    ts = next((p for p in [shutil.which('tailscale.exe') or '', '/mnt/c/Program Files/Tailscale/tailscale.exe']
+               + glob.glob('/mnt/?/Programs/Tailscale/tailscale.exe') if p and os.path.exists(p)), '')
+    if ts:
         try:
             out = subprocess.run([ts, 'status'], capture_output=True, text=True, timeout=10).stdout
             names.update(l.split()[1] for l in out.splitlines() if len(l.split()) > 1 and l.split()[1].startswith(PREFIX))

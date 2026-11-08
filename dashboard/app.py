@@ -71,7 +71,8 @@ def reachable(host, timeout=3):
 
 
 def tailscale_exe():
-    for p in (shutil.which('tailscale'), r'C:\Program Files\Tailscale\tailscale.exe'):
+    on_drives = [f'{d}:\\Programs\\Tailscale\\tailscale.exe' for d in 'CDEFGHIJKLMNOPQRSTUVWXYZ']   # setup may use the kit's drive
+    for p in [shutil.which('tailscale'), r'C:\Program Files\Tailscale\tailscale.exe'] + on_drives:
         if p and os.path.exists(p):
             return p
     return None
