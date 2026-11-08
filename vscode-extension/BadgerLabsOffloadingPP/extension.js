@@ -7,7 +7,7 @@ const cp = require('child_process');
 const net = require('net');
 const os = require('os');
 
-const REPO_URL = 'https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink#readme';
+const REPO_URL = 'https://github.com/RoboBadgersRomania/PowerCluster#readme';
 const PREFIX = 'processingoffloadpc';
 const WOL_PY = 'import socket,sys;m=bytes.fromhex(sys.argv[1].replace(":","").replace("-",""));' +
   's=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1);' +
@@ -314,7 +314,7 @@ async function pickPowerplants(title) {
 }
 
 // ---------- self-update from the GitHub repo ----------
-const RAW = 'https://raw.githubusercontent.com/RoboBadgersRomania/OfflLoadProcessingPowerLink/main/vscode-extension';
+const RAW = 'https://raw.githubusercontent.com/RoboBadgersRomania/PowerCluster/main/vscode-extension';
 function httpsGet(url, binary = false) {
   return new Promise((resolve) => {
     require('https').get(url, { timeout: 15000, headers: { 'User-Agent': 'BadgerLabsOffloadingPP' } }, (res) => {
@@ -611,7 +611,7 @@ const commands = {
         : `${h} didn't come online. From another network, a wake listener on its home network must send the signal (a sleeping PC isn't on the internet).`,
       'How to set up', ...(relay ? [] : ['Set Tailscale relay']));
     if (p === 'How to set up') {
-      vscode.env.openExternal(vscode.Uri.parse('https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink#wake-over-the-internet'));
+      vscode.env.openExternal(vscode.Uri.parse('https://github.com/RoboBadgersRomania/PowerCluster#wake-over-the-internet'));
     } else if (p) {
       const v = await vscode.window.showInputBox({
         title: `Wake relay for ${h}`, ignoreFocusOut: true, placeHolder: 'pi@wakepi',

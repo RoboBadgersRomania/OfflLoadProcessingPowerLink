@@ -1,7 +1,7 @@
 # Computing Power Network - Claude panel
 
 A panel beside the Claude chat (Claude Code desktop app or terminal) for the
-[Computing Power Network](https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink):
+[Computing Power Network](https://github.com/RoboBadgersRomania/PowerCluster):
 every nuclear powerplant on your Tailscale network with a live dot (green ready, yellow owner
 using it / job paused, blue not shared, red offline), its specs (GPU, CPU, RAM) and load, and
 quick actions on the selected one: Status, Processes, Start, Sleep (with "anyway" when busy),
@@ -17,9 +17,9 @@ username (read from this PC's Ubuntu the first time).
 In a Claude Code terminal session:
 
 ```
-/plugin install computing-power-network --marketplace RoboBadgersRomania/OfflLoadProcessingPowerLink
+/plugin install computing-power-network --marketplace RoboBadgersRomania/PowerCluster
 ```
 
 Answer `y` to add the marketplace, then pick a scope. In the desktop app: click + next to the
-prompt box, Plugins, Add marketplace `RoboBadgersRomania/OfflLoadProcessingPowerLink`, then add
+prompt box, Plugins, Add marketplace `RoboBadgersRomania/PowerCluster`, then add
 the plugin.

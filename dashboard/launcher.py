@@ -17,7 +17,7 @@ import sys
 import traceback
 import urllib.request
 
-RAW = 'https://raw.githubusercontent.com/RoboBadgersRomania/OfflLoadProcessingPowerLink/main/dashboard'
+RAW = 'https://raw.githubusercontent.com/RoboBadgersRomania/PowerCluster/main/dashboard'
 CACHE = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'OffloadPC', 'dashboard_app')
 
 try:                       # the copy compiled into the .exe (fallback, and makes PyInstaller bundle pygame)

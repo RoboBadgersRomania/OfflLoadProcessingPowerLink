@@ -3,7 +3,7 @@
 Don't run this file directly: run launcher.py (or the compiled ComputingPowerNetwork.exe), which keeps
 this file up to date from the GitHub repo. Needs: Windows, Tailscale signed in, and SETUP-my-PC done.
 """
-APP_VERSION = '1.1.0'
+APP_VERSION = '1.1.1'
 
 import base64
 import concurrent.futures as cf
@@ -25,7 +25,7 @@ import zipfile
 
 import pygame
 
-REPO = 'RoboBadgersRomania/OfflLoadProcessingPowerLink'
+REPO = 'RoboBadgersRomania/PowerCluster'
 RAW = f'https://raw.githubusercontent.com/{REPO}/main'
 ZIP = f'https://codeload.github.com/{REPO}/zip/refs/heads/main'
 PREFIX = 'processingoffloadpc'

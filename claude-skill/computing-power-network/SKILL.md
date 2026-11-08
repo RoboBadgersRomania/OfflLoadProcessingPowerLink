@@ -5,8 +5,8 @@ description: Operate and troubleshoot the Computing Power Network (BadgerLabs "n
 
 # Computing Power Network (BadgerLabs nuclear powerplants)
 
-Repo: https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink (README has everything).
-Skill version: 1.1.0. If `https://raw.githubusercontent.com/RoboBadgersRomania/OfflLoadProcessingPowerLink/main/claude-skill/computing-power-network/SKILL.md`
+Repo: https://github.com/RoboBadgersRomania/PowerCluster (README has everything).
+Skill version: 1.1.0. If `https://raw.githubusercontent.com/RoboBadgersRomania/PowerCluster/main/claude-skill/computing-power-network/SKILL.md`
 shows a newer version, offer to replace this file with it (the dashboard's "Update kit" does that too).
 
 ## Architecture (what runs where)

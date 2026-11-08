@@ -9,9 +9,9 @@
 ; Install folder's drive = where Ubuntu, WSL swap and Tailscale go (keep C: free by picking D:).
 
 #define AppName "Computing Power Network"
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.1"
 #define Publisher "RoboBadgers Romania"
-#define Repo "https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink"
+#define Repo "https://github.com/RoboBadgersRomania/PowerCluster"
 
 [Setup]
 AppId={{7C3E5B2A-4F1D-4C8E-9B6A-2D5F0E1C9A77}

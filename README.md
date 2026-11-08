@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Windows-WSL_2_·_Ubuntu_24.04-EDE0C8?style=for-the-badge&labelColor=0B0B0B" alt="Windows + WSL 2">
   <img src="https://img.shields.io/badge/Network-Tailscale_·_Zenoh-8B0000?style=for-the-badge&labelColor=0B0B0B" alt="Tailscale + Zenoh">
   <img src="https://img.shields.io/badge/GPU-NVIDIA_CUDA_in_Docker-EDE0C8?style=for-the-badge&logo=nvidia&logoColor=EDE0C8&labelColor=0B0B0B" alt="NVIDIA CUDA in Docker">
-  <img src="https://img.shields.io/badge/Apps-pygame_·_VS_Code_·_Claude-8B0000?style=for-the-badge&labelColor=0B0B0B" alt="pygame dashboard, VS Code extension, Claude panel">
+  <img src="https://img.shields.io/badge/Apps-pygame%20%C2%B7%20VS%20Code%20%C2%B7%20Claude-8B0000?style=for-the-badge&labelColor=0B0B0B" alt="pygame dashboard, VS Code extension, Claude panel">
 </p>
 
 <p align="center">
@@ -220,7 +220,7 @@ Build once with [`dashboard/build.bat`](dashboard/build.bat) → `ComputingPower
 
 ### VS Code extension: `BadgerLabsOffloadingPP` (Computing Power Network)
 
-Status bar `🟢 RTX 4090 · 12%` / `🟡 · paused` / `🔴` → click for the menu: **Choose nuclear powerplant** (like picking an AI model: each PC by its specs with a live dot), Start, Show running processes, Sleep (now / at / after finish), Wake, Resume, Guardian, Phone notifications, **Distribute work** (multi-select), Distributed jobs status, Stop work, Open powerplant workspace (Remote-SSH), ROS shells, colcon build, Foxglove, Restart / Shut down, **Check for update** (it also checks GitHub every 6 h). Installed by the setup; by hand: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.3.0.vsix`.
+Status bar `🟢 RTX 4090 · 12%` / `🟡 · paused` / `🔴` → click for the menu: **Choose nuclear powerplant** (like picking an AI model: each PC by its specs with a live dot), Start, Show running processes, Sleep (now / at / after finish), Wake, Resume, Guardian, Phone notifications, **Distribute work** (multi-select), Distributed jobs status, Stop work, Open powerplant workspace (Remote-SSH), ROS shells, colcon build, Foxglove, Restart / Shut down, **Check for update** (it also checks GitHub every 6 h). Installed by the setup; by hand: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.3.1.vsix`.
 
 Two VS Code windows is the ROS workflow: **WSL: Connect to WSL** for your PC (Gazebo, RViz, light nodes) and **Open powerplant workspace** for the powerplant (attach to `docker-dev-1` with Dev Containers to work inside the GPU container). Recommended extensions (installed by setup): WSL, Remote - SSH, Dev Containers, Robot Developer Extensions for ROS 2, Python, C/C++, CMake Tools.
 
@@ -230,9 +230,9 @@ Two VS Code windows is the ROS workflow: **WSL: Connect to WSL** for your PC (Ga
 - **Side panel** next to the chat ([`claude-skill/cpn-panel`](claude-skill/cpn-panel)): powerplants with live dots and specs, quick actions (Status, Processes, Start, Sleep / anyway, Sleep after finish, Wake, Resume, Refresh); `/cpn` reopens it.
 
 ```
-/plugin install computing-power-network --marketplace RoboBadgersRomania/OfflLoadProcessingPowerLink
+/plugin install computing-power-network --marketplace RoboBadgersRomania/PowerCluster
 ```
-<sub>Desktop app: + next to the prompt → Plugins → Add marketplace `RoboBadgersRomania/OfflLoadProcessingPowerLink` → add the plugin.</sub>
+<sub>Desktop app: + next to the prompt → Plugins → Add marketplace `RoboBadgersRomania/PowerCluster` → add the plugin.</sub>
 
 ### Shell shortcuts (Ubuntu on your PC)
 

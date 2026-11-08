@@ -2,11 +2,11 @@
   "name": "badgerlabs-offloading-pp",
   "displayName": "Computing Power Network",
   "description": "Computing Power Network: offload ROS 2 work to remote GPU PCs (nuclear powerplants) - pick PCs by specs with live green/red dots, distribute jobs by hardware, start/sleep/wake from any network, running processes, auto-pause when the owner uses the PC, self-updating.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "robobadgers",
   "repository": {
     "type": "git",
-    "url": "https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink"
+    "url": "https://github.com/RoboBadgersRomania/PowerCluster"
   },
   "engines": {
     "vscode": "^1.80.0"
