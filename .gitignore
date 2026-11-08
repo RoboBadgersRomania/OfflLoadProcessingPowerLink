@@ -6,3 +6,11 @@ ws/log/
 .vscode/
 *.swp
 Thumbs.db
+# Python / dashboard build output
+__pycache__/
+*.pyc
+dashboard/build/
+dashboard/dist/
+*.spec
+# job scripts + logs written on powerplants
+ws/.jobs/

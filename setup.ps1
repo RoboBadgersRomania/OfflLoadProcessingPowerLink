@@ -35,7 +35,7 @@ function Get-WslUser { Clean (wsl.exe -d $Distro -u root --exec bash -c "getent 
 function WslBash($cmd) { wsl.exe -d $Distro --exec bash -lc $cmd }
 
 $title = if ($Role -eq 'offload') { "processing offload PC (heavy computing)" } else { "Your PC (light work + screen)" }
-Write-Host "ROS 2 offload setup: $title" -ForegroundColor Green
+Write-Host "Computing Power Network setup: $title" -ForegroundColor Green
 
 # 1. Check hardware / Windows
 Step 1 "Checking this PC"
@@ -196,6 +196,12 @@ if ($Role -eq 'offload') {
   } else {
     Write-Host "`nVS Code not found - skipping VS Code extensions (see README > VS Code)."
   }
+
+  # Claude skill (teaches Claude Code to run + troubleshoot the powerplants)
+  $skillDst = Join-Path (Join-Path $env:USERPROFILE '.claude' ) 'skills' | Join-Path -ChildPath 'computing-power-network'
+  New-Item -ItemType Directory -Force -Path $skillDst | Out-Null
+  Copy-Item (Join-Path $Kit 'claude-skill' | Join-Path -ChildPath 'computing-power-network' | Join-Path -ChildPath '*') $skillDst -Recurse -Force
+  Write-Host "OK  Claude skill computing-power-network"
 
   Write-Host "`nDONE. Open 'Ubuntu 24.04' from the Start menu and test:" -ForegroundColor Green
   Write-Host "  start-nuclear-powerplant   (start ROS on the offload PC + open a shell there)"

@@ -130,6 +130,8 @@ case "$ACTION" in
     nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw \
       --format=csv,noheader 2>/dev/null || echo "(GPU info unavailable)"
     idle=$(win_idle || true); [ -n "$idle" ] && echo "Owner: last keyboard/mouse use $((idle / 60)) min ago"
+    mac=$(grep -oiE '([0-9a-f]{2}[:-]){5}[0-9a-f]{2}' "$AGENT/mac" 2>/dev/null | head -1); [ -n "$mac" ] && echo "MAC: $mac"
+    load_conf; [ -n "${WAKE_TOPIC:-}" ] && echo "WakeTopic: $WAKE_TOPIC"
     if [ -f "$STATE" ] && dev_paused; then echo "Guardian: PAUSED - someone is using this PC (since $(date -d "@$(cat "$STATE")" +%H:%M))"; fi
     agent_alive || echo "Agent: NOT RUNNING (power commands won't work until someone logs in to Windows)"
     ;;
@@ -246,11 +248,107 @@ case "$ACTION" in
       echo "Notifications are off (NTFY_TOPIC is empty in ~/.offload-agent/guardian.conf)."
     fi
     ;;
+  wake-topic)
+    load_conf; echo "${WAKE_TOPIC:-}"
+    ;;
+  wake-info)
+    load_conf
+    mac=$(grep -oiE '([0-9a-f]{2}[:-]){5}[0-9a-f]{2}' "$AGENT/mac" 2>/dev/null | head -1)
+    echo "Wake $(powerplant_name) from any network: run a wake listener on ITS home network."
+    echo "  Wake topic : ${WAKE_TOPIC:-none - rerun SETUP-processingoffloadPC.cmd}"
+    echo "  MAC        : ${mac:-unknown}"
+    echo "  Raspberry Pi / old laptop / Android (Termux):"
+    echo "    python3 wake_listener.py --topic ${WAKE_TOPIC:-TOPIC}            (sudo ... --install-service = start at boot)"
+    echo "  ESP32 board: put the topic in wake-listener/esp32_wake_listener/esp32_wake_listener.ino"
+    ;;
   notify-test)
     notify "Test from $(powerplant_name)" "Notifications work." "white_check_mark"; echo "Test notification sent."
     ;;
+
+  # ---------------- distributed work (used by cluster/distribute.py on your PC) ----------------
+  capacity)   # one JSON line: hardware + current load, for the scheduler
+    g=$(nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)
+    read -r load _ < /proc/loadavg
+    jobs_running=$( (dev_paused || compose exec -T dev tmux list-panes -a -F '#{session_name} #{pane_current_command}' 2>/dev/null) \
+                    | tr -d '\r' | grep '^job_' | grep -cvE ' (bash|sh)$' || true)
+    load_conf
+    GPU_CSV="$g" LOAD="$load" THREADS="$(nproc)" IDLE="$(win_idle || echo -1)" PAUSED="$(dev_paused && echo 1 || echo 0)" \
+    JOBS="${jobs_running:-0}" GUARD="${ENABLED:-1}" NAME="$(powerplant_name)" SPECS="$(cat "$AGENT/specs" 2>/dev/null | tr -d '\r')" \
+    python3 - <<'EOF'
+import json, os
+def num(x, d=0.0):
+    try: return float(x)
+    except (TypeError, ValueError): return d
+g = [p.strip() for p in os.environ.get('GPU_CSV', '').split(',')] if os.environ.get('GPU_CSV') else []
+mem = {}
+for line in open('/proc/meminfo'):
+    k, v = line.split(':', 1); mem[k] = int(v.split()[0])
+print(json.dumps({
+    'name': os.environ['NAME'], 'specs': os.environ['SPECS'],
+    'gpu': g[0] if g else '', 'vram_total_mb': num(g[1]) if len(g) > 1 else 0, 'vram_used_mb': num(g[2]) if len(g) > 2 else 0,
+    'gpu_util': num(g[3]) if len(g) > 3 else 0,
+    'threads': int(os.environ['THREADS']), 'load1': num(os.environ['LOAD']),
+    'ram_total_gb': round(mem.get('MemTotal', 0) / 1048576, 1), 'ram_avail_gb': round(mem.get('MemAvailable', 0) / 1048576, 1),
+    'owner_idle_s': int(num(os.environ['IDLE'], -1)), 'paused': os.environ['PAUSED'] == '1',
+    'guardian': os.environ['GUARD'] == '1', 'jobs_running': int(num(os.environ['JOBS'])),
+}))
+EOF
+    ;;
+  run-job)    # run-job NAME BASE64_COMMAND : start a job in the dev container, in tmux session job_NAME
+    name="$ARG1"; cmd=$(printf '%s' "${ARGS[2]:-}" | base64 -d 2>/dev/null)
+    [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "error: job name must be letters, digits, - or _"; exit 1; }
+    [ -n "$cmd" ] || { echo "error: empty command"; exit 1; }
+    if dev_paused; then echo "error: the ROS container is paused (owner using the PC)"; exit 1; fi
+    compose up -d dev >/dev/null 2>&1
+    mkdir -p "$REPO/ws/.jobs"
+    {
+      echo '#!/bin/bash'
+      echo 'source /opt/ros/jazzy/setup.bash'
+      echo '[ -f /ws/install/setup.bash ] && source /ws/install/setup.bash'
+      echo "cd /ws; export BADGER_JOB='$name' BADGER_POWERPLANT='$(powerplant_name)'"
+      echo "echo \"[job $name started on $(powerplant_name) at \$(date)]\""
+      printf '%s\n' "$cmd"
+      echo 'rc=$?; echo "[job '"$name"' finished with exit code $rc at $(date)]"'
+    } > "$REPO/ws/.jobs/$name.sh"
+    compose exec -T dev tmux kill-session -t "job_$name" >/dev/null 2>&1
+    : > "$REPO/ws/.jobs/$name.log"
+    if compose exec -T dev tmux new-session -d -s "job_$name" "bash /ws/.jobs/$name.sh 2>&1 | tee -a /ws/.jobs/$name.log; exec bash"; then
+      echo "ok job $name started on $(powerplant_name)"
+    else
+      echo "error: could not start job $name"; exit 1
+    fi
+    ;;
+  jobs)       # list jobs: NAME running|finished + last log line
+    panes=$(compose exec -T dev tmux list-panes -a -F '#{session_name} #{pane_current_command}' 2>/dev/null | tr -d '\r' | grep '^job_' || true)
+    if [ -z "$panes" ]; then echo "(no jobs on $(powerplant_name))"; exit 0; fi
+    while read -r sess cmdname; do
+      n=${sess#job_}
+      state=$([[ "$cmdname" =~ ^(bash|sh)$ ]] && echo finished || echo running)
+      dev_paused && state=paused
+      printf '%-24s %-9s %s\n' "$n" "$state" "$(tail -n 1 "$REPO/ws/.jobs/$n.log" 2>/dev/null | cut -c1-80)"
+    done <<<"$panes"
+    ;;
+  stop-jobs)  # stop-jobs [NAME|all]
+    target="${ARG1:-all}"
+    for sess in $(compose exec -T dev tmux list-sessions -F '#{session_name}' 2>/dev/null | tr -d '\r' | grep '^job_'); do
+      if [ "$target" = all ] || [ "$sess" = "job_$target" ]; then compose exec -T dev tmux kill-session -t "$sess" && echo "stopped ${sess#job_}"; fi
+    done
+    ;;
+  job-log)
+    tail -n "${ARGS[2]:-40}" "$REPO/ws/.jobs/$ARG1.log" 2>/dev/null || echo "no log for job $ARG1"
+    ;;
+  link)       # link host1,host2 | none : connect this powerplant's ROS router to other powerplants' routers
+    f="$AGENT/cluster.env"
+    if [ -z "$ARG1" ] || [ "$ARG1" = none ]; then : > "$f"; echo "unlinked";
+    else
+      eps=$(echo "$ARG1" | tr ',' '\n' | grep -v "^$(powerplant_name)$" | grep -v '^$' | sed 's/.*/"tcp\/&:7447"/' | paste -sd, -)
+      if [ -n "$eps" ]; then echo "ZENOH_CONFIG_OVERRIDE=connect/endpoints=[$eps]" > "$f"; else : > "$f"; fi
+      echo "linked to: ${eps:-nobody}"
+    fi
+    compose up -d --force-recreate zenoh >/dev/null 2>&1 && echo "ROS router restarted"
+    ;;
   *)
-    echo "Usage: power.sh status|specs|start|processes|sleep|sleep-until HH:MM|sleep-after-finish [HH:MM|status|cancel]|off|restart|cancel|mac|resume|guardian [on|off|status]|notify-info|notify-test [--force]"
+    echo "Usage: power.sh status|specs|start|processes|sleep|sleep-until HH:MM|sleep-after-finish [HH:MM|status|cancel]|off|restart|cancel|mac|resume|guardian [on|off|status]|notify-info|notify-test|wake-topic|wake-info|capacity|run-job NAME B64CMD|jobs|stop-jobs [NAME|all]|job-log NAME|link PEERS|none [--force]"
     exit 1
     ;;
 esac

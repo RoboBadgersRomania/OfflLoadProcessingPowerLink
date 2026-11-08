@@ -1,48 +1,180 @@
 {
   "name": "badgerlabs-offloading-pp",
-  "displayName": "BadgerLabsOffloadingPP",
-  "description": "Offload ROS 2 processing power to remote GPU PCs (nuclear powerplants): pick a PC by its specs with a live green/red dot, start/sleep/wake it, see running processes, auto-pause when its owner uses it, remote build and ROS shells.",
-  "version": "0.2.1",
+  "displayName": "Computing Power Network",
+  "description": "Computing Power Network: offload ROS 2 work to remote GPU PCs (nuclear powerplants) - pick PCs by specs with live green/red dots, distribute jobs by hardware, start/sleep/wake from any network, running processes, auto-pause when the owner uses the PC, self-updating.",
+  "version": "0.3.0",
   "publisher": "robobadgers",
   "repository": {
     "type": "git",
     "url": "https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink"
   },
-  "engines": { "vscode": "^1.80.0" },
-  "categories": ["Other"],
-  "keywords": ["ros", "ros2", "robotics", "remote", "gpu", "offload", "tailscale"],
-  "extensionKind": ["ui"],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ros",
+    "ros2",
+    "robotics",
+    "remote",
+    "gpu",
+    "offload",
+    "tailscale"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
   "main": "./extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
-      { "command": "badgerlabs.menu", "title": "Show menu", "category": "BadgerLabs" },
-      { "command": "badgerlabs.choose", "title": "Choose nuclear powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.start", "title": "Start nuclear powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.processes", "title": "Show running processes", "category": "BadgerLabs" },
-      { "command": "badgerlabs.status", "title": "Powerplant status", "category": "BadgerLabs" },
-      { "command": "badgerlabs.openRemote", "title": "Open powerplant workspace (Remote-SSH)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.rosShell", "title": "Open ROS shell on powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.localShell", "title": "Open ROS shell on this PC (Ubuntu)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.build", "title": "Build workspace on powerplant (colcon)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.restartRos", "title": "Restart ROS containers on powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.foxglove", "title": "Open Foxglove viewer", "category": "BadgerLabs" },
-      { "command": "badgerlabs.sleep", "title": "Sleep nuclear powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.sleepUntil", "title": "Sleep nuclear powerplant and wake at...", "category": "BadgerLabs" },
-      { "command": "badgerlabs.sleepAfterFinish", "title": "Sleep nuclear powerplant after work finishes", "category": "BadgerLabs" },
-      { "command": "badgerlabs.wake", "title": "Wake nuclear powerplant (wake relay)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.resume", "title": "Resume paused job", "category": "BadgerLabs" },
-      { "command": "badgerlabs.guardian", "title": "Guardian (auto-pause while the owner uses the PC)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.notifications", "title": "Phone notifications", "category": "BadgerLabs" },
-      { "command": "badgerlabs.shutdown", "title": "Shut down powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.restart", "title": "Restart powerplant", "category": "BadgerLabs" },
-      { "command": "badgerlabs.cancel", "title": "Cancel pending shutdown/restart", "category": "BadgerLabs" },
-      { "command": "badgerlabs.mac", "title": "Show powerplant MAC address (Wake-on-LAN)", "category": "BadgerLabs" },
-      { "command": "badgerlabs.settings", "title": "Settings", "category": "BadgerLabs" },
-      { "command": "badgerlabs.readme", "title": "Open setup guide", "category": "BadgerLabs" }
+      {
+        "command": "badgerlabs.menu",
+        "title": "Show menu",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.choose",
+        "title": "Choose nuclear powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.start",
+        "title": "Start nuclear powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.processes",
+        "title": "Show running processes",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.status",
+        "title": "Powerplant status",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.openRemote",
+        "title": "Open powerplant workspace (Remote-SSH)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.rosShell",
+        "title": "Open ROS shell on powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.localShell",
+        "title": "Open ROS shell on this PC (Ubuntu)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.build",
+        "title": "Build workspace on powerplant (colcon)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.restartRos",
+        "title": "Restart ROS containers on powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.foxglove",
+        "title": "Open Foxglove viewer",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.sleep",
+        "title": "Sleep nuclear powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.sleepUntil",
+        "title": "Sleep nuclear powerplant and wake at...",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.sleepAfterFinish",
+        "title": "Sleep nuclear powerplant after work finishes",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.wake",
+        "title": "Wake nuclear powerplant (wake relay)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.resume",
+        "title": "Resume paused job",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.guardian",
+        "title": "Guardian (auto-pause while the owner uses the PC)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.notifications",
+        "title": "Phone notifications",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.shutdown",
+        "title": "Shut down powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.restart",
+        "title": "Restart powerplant",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.cancel",
+        "title": "Cancel pending shutdown/restart",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.mac",
+        "title": "Show powerplant MAC address (Wake-on-LAN)",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.settings",
+        "title": "Settings",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.readme",
+        "title": "Open setup guide",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.distribute",
+        "title": "Distribute work across powerplants",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.clusterStatus",
+        "title": "Distributed jobs status",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.stopWork",
+        "title": "Stop distributed work",
+        "category": "BadgerLabs"
+      },
+      {
+        "command": "badgerlabs.checkUpdate",
+        "title": "Check for extension update",
+        "category": "BadgerLabs"
+      }
     ],
     "configuration": {
-      "title": "BadgerLabsOffloadingPP",
+      "title": "Computing Power Network",
       "properties": {
         "badgerlabs.host": {
           "type": "string",
@@ -73,8 +205,15 @@
         "badgerlabs.wakeRelays": {
           "type": "object",
           "default": {},
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "description": "Wake relay per powerplant, e.g. { \"processingoffloadpc\": \"pi@wakepi\" }: an always-on Tailscale device on that PC's home network."
+        },
+        "badgerlabs.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check the GitHub repo for a newer version of this extension (at startup and every 6 h) and offer to install it."
         }
       }
     }

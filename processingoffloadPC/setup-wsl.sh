@@ -49,7 +49,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv
 
 echo "== 1. Docker Engine =="
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg tmux
+sudo apt-get install -y ca-certificates curl gnupg tmux rsync
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo "$VERSION_CODENAME") stable" \
@@ -99,6 +99,9 @@ EOF
 else
   sed -i "s/^POWERPLANT_NAME=.*/POWERPLANT_NAME=$POWERPLANT_NAME/; s/^ENABLED=[01]/ENABLED=$GUARDIAN/" "$CONF"
 fi
+# Private topic a wake listener on this PC's home network listens to (wake from any network)
+grep -q '^WAKE_TOPIC=' "$CONF" || \
+  echo "WAKE_TOPIC=badger-wake-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')   # see wake-listener/" >> "$CONF"
 sudo tee /etc/systemd/system/offload-guardian.service >/dev/null <<EOF
 [Unit]
 Description=OffloadPC guardian (pause jobs while the PC owner uses the PC)
@@ -118,3 +121,4 @@ sudo systemctl enable --now offload-guardian.service
 echo
 echo "Done: '$POWERPLANT_NAME' ($(tailscale ip -4 2>/dev/null | head -1))"
 echo "Phone notifications (job paused/resumed): install the 'ntfy' app and subscribe to:  $NTFY_TOPIC"
+echo "Wake from any network: run a wake listener on this home network with topic:  ${WAKE_TOPIC%% *}"

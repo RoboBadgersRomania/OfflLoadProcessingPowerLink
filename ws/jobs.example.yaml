@@ -1,0 +1,42 @@
+# Jobs for distribute-work. Copy to ws/jobs.yaml and edit:  cp jobs.example.yaml jobs.yaml
+#
+# Each job runs in its own tmux session on the PC the scheduler picks (inside the ROS container,
+# with /opt/ros/jazzy and your built workspace /ws/install already sourced).
+#
+#   name     unique, letters/digits/-/_                     (required)
+#   run      the command                                    (required)
+#   gpu      true = needs a GPU                             (default false)
+#   vram_gb  GPU memory it needs                            (default 2 for GPU jobs)
+#   cpu      CPU threads it keeps busy                      (default 1)
+#   ram_gb   RAM it needs                                   (default 1)
+#   weight   how heavy it is compared to the others         (default 1)
+#   pin      run it on this PC only, e.g. 4090 or desktop   (optional)
+
+jobs:
+  - name: talker
+    run: ros2 run demo_nodes_cpp talker
+
+  - name: listener
+    run: ros2 run demo_nodes_cpp listener
+
+  - name: gpu_check
+    run: nvidia-smi -l 10
+    gpu: true
+    vram_gb: 1
+
+  # Real examples (uncomment / adapt):
+  # - name: yolo_detector
+  #   run: ros2 launch my_perception yolo.launch.py
+  #   gpu: true
+  #   vram_gb: 6
+  #   weight: 3
+  # - name: slam
+  #   run: ros2 launch slam_toolbox online_async_launch.py
+  #   cpu: 4
+  #   ram_gb: 4
+  # - name: training
+  #   run: python3 /ws/src/my_pkg/train.py
+  #   gpu: true
+  #   vram_gb: 10
+  #   weight: 5
+  #   pin: 4090

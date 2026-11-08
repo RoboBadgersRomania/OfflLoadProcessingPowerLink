@@ -12,6 +12,10 @@ services:
   zenoh:
     <<: *ros
     command: bash -c "source /opt/ros/jazzy/setup.bash && ros2 run rmw_zenoh_cpp rmw_zenohd"
+    # Links to other powerplants' routers when work is distributed (written by "power.sh link")
+    env_file:
+      - path: ${HOME}/.offload-agent/cluster.env
+        required: false
 
   # Foxglove bridge: view topics/3D/plots from your PC at ws://processingoffloadpc:8765
   foxglove:

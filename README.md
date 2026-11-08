@@ -1,4 +1,4 @@
-# OffLoad Processing Power Link
+# Computing Power Network
 
 Run **ROS 2** on your everyday Windows PC or laptop and send the heavy work (AI models, SLAM,
 simulation, training, big builds) to one or more powerful Windows PCs elsewhere, over the internet.
@@ -197,7 +197,7 @@ powerplant) and the **BadgerLabsOffloadingPP** extension to control the powerpla
 | **Dev Containers** (`ms-vscode-remote.remote-containers`) | Work *inside* the powerplant's ROS container |
 | **Robot Developer Extensions for ROS 2** (`Ranch-Hand-Robotics.rde-ros-2`) | ROS 2 launch/debug, URDF preview |
 | **Python**, **C/C++**, **CMake Tools** | Write ROS nodes in Python / C++ |
-| **BadgerLabsOffloadingPP** | This repo's extension: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.2.1.vsix` |
+| **BadgerLabsOffloadingPP** | This repo's extension: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.3.0.vsix` |
 
 ### 2. Window 1: your PC (Gazebo, RViz, light nodes)
 - `Ctrl+Shift+P` → **WSL: Connect to WSL** (bottom-left shows `WSL: Ubuntu-24.04`).

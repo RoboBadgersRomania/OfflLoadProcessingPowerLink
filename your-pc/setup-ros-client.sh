@@ -28,7 +28,7 @@ sudo apt-get update
 sudo apt-get install -y \
   ros-jazzy-desktop ros-jazzy-ros-gz ros-jazzy-rmw-zenoh-cpp \
   ros-jazzy-image-transport-plugins \
-  python3-colcon-common-extensions git tmux
+  python3-colcon-common-extensions git tmux rsync
 
 echo "== 3. Connect to the offload PC on every new terminal =="
 # Rewrite our block on every run (so updates apply), keeping a customised OFFLOAD_USER.
@@ -63,9 +63,12 @@ list-powerplants() {
   for n in $(_offload_names); do
     if offloadpc-online "$n"; then
       dot="$_green"
-      specs=$(timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 "$OFFLOAD_USER@$n" \
-              "cat ~/.offload-agent/specs 2>/dev/null" 2>/dev/null | tr -d '\r')
+      info=$(timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 "$OFFLOAD_USER@$n" \
+              "cat ~/.offload-agent/specs; echo; cat ~/.offload-agent/mac; echo; grep -o '^WAKE_TOPIC=[^ ]*' ~/.offload-agent/guardian.conf" 2>/dev/null | tr -d '\r')
+      specs=$(echo "$info" | head -1)
       [ -n "$specs" ] && echo "$specs" > ~/.offloadpc-specs-"$n"
+      if echo "$info" | tail -n +2 | grep -qiE '([0-9a-f]{2}[:-]){5}'; then echo "$info" | tail -n +2 | grep -v WAKE_TOPIC > ~/.offloadpc-mac-"$n"; fi
+      echo "$info" | sed -n 's/^WAKE_TOPIC=//p' | head -1 > ~/.offloadpc-waketopic-"$n"
     else
       dot="$_red"; specs="$(cat ~/.offloadpc-specs-"$n" 2>/dev/null) (offline)"
     fi
@@ -91,15 +94,12 @@ offloadpc-exec()  { ssh -o ConnectTimeout=8 "$OFFLOAD_USER@$OFFLOAD_HOST" "bash 
 start-nuclear-powerplant() {
   echo "Starting nuclear powerplant: $OFFLOAD_HOST"
   if ! offloadpc-online; then
-    if _offload_relay >/dev/null; then wake-nuclear-powerplant || return 1; echo "Giving Ubuntu + Docker 20 s to start..."; sleep 20
-    else
-      echo "It's offline (asleep or off). Wake it with Wake-on-LAN from its home network,"
-      echo "set up a wake relay (README > Wake over the internet: set-wake-relay), or next time"
-      echo "use  sleep-nuclear-powerplant HH:MM  (it wakes itself at HH:MM)."
-      return 1
-    fi
+    echo "It's offline (asleep or off) - trying to wake it..."
+    wake-nuclear-powerplant || return 1
+    echo "Giving Ubuntu + Docker 20 s to start..."; sleep 20
   fi
   offloadpc-exec mac > ~/.offloadpc-mac-"$OFFLOAD_HOST" 2>/dev/null
+  offloadpc-exec wake-topic > ~/.offloadpc-waketopic-"$OFFLOAD_HOST" 2>/dev/null
   offloadpc-power start && offloadpc
 }
 # sleep-nuclear-powerplant [HH:MM] [--after-finish] [--force]
@@ -130,6 +130,7 @@ alias offloadpc-status='offloadpc-power status'
 alias offloadpc-off='offloadpc-power off'
 alias offloadpc-restart='offloadpc-power restart'
 alias offloadpc-cancel='offloadpc-power cancel'
+offloadpc-wake-info() { offloadpc-exec wake-info; }
 
 # --- Wake over the internet: a "wake relay" = any always-on Tailscale device on the powerplant's
 #     home network (Raspberry Pi, old laptop...). It sends the Wake-on-LAN packet for you.
@@ -140,20 +141,46 @@ set-wake-relay() {
   echo "Wake relay for $OFFLOAD_HOST: $1"
 }
 _WOL_PY='import socket,sys;m=bytes.fromhex(sys.argv[1].replace(":","").replace("-",""));s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1);[s.sendto(b"\xff"*6+m*16,("255.255.255.255",p)) for p in (7,9)]'
+# Same network: this PC's Windows side broadcasts the packet itself (your-pc/wol.ps1).
+_wol_direct() {
+  local ps=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+  [ -x "$ps" ] || return 1
+  "$ps" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(wslpath -w ~/ros2-remote/your-pc/wol.ps1)" -Mac "$1" 2>/dev/null | tr -d '\r'
+}
 wake-nuclear-powerplant() {
   local relay mac i
-  relay=$(_offload_relay) || { echo "No wake relay for $OFFLOAD_HOST yet: set-wake-relay user@device (see README)"; return 1; }
   mac=$(grep -oiE '([0-9a-f]{2}[:-]){5}[0-9a-f]{2}' ~/.offloadpc-mac-"$OFFLOAD_HOST" 2>/dev/null | head -1)
-  if [ -z "$mac" ]; then echo "MAC address unknown - run offloadpc-mac once while $OFFLOAD_HOST is on."; return 1; fi
-  echo "Waking $OFFLOAD_HOST ($mac) via $relay ..."
-  ssh -o ConnectTimeout=8 "$relay" "python3 -c '$_WOL_PY' $mac" || { echo "Couldn't reach the relay $relay."; return 1; }
+  if [ -z "$mac" ]; then echo "MAC address of $OFFLOAD_HOST unknown - run list-powerplants or offloadpc-mac once while it is on."; return 1; fi
+  echo "Waking $OFFLOAD_HOST ($mac)"
+  local topic; topic=$(tr -d '\r ' < ~/.offloadpc-waketopic-"$OFFLOAD_HOST" 2>/dev/null)
+  if [ -n "$topic" ]; then
+    if curl -fsS -m 10 -d "wake $mac" "https://ntfy.sh/$topic" >/dev/null; then echo "  via wake listener (internet): sent"
+    else echo "  via wake listener (internet): couldn't reach ntfy.sh"; fi
+  fi
+  echo "  on this network: $(_wol_direct "$mac" || echo 'failed')"
+  if relay=$(_offload_relay); then
+    if ssh -o ConnectTimeout=8 "$relay" "python3 -c '$_WOL_PY' $mac"; then echo "  via wake relay $relay: sent"
+    else echo "  via wake relay $relay: couldn't reach it"; fi
+  fi
   echo -n "Waiting for it to come online"
   for i in $(seq 1 36); do
     if offloadpc-online; then echo " - $_green online!"; return 0; fi
     echo -n .; sleep 5
   done
-  echo " - $_red not online after 3 min (Wake-on-LAN enabled in its BIOS? wired network?)"; return 1
+  echo " - $_red not online after 3 min."
+  if [ -z "$topic$relay" ]; then
+    echo "From another network, something on its home network must send the wake signal (a sleeping PC"
+    echo "isn't on the internet). Set up a wake listener there: offloadpc-wake-info   (README > Wake over the internet)"
+  else
+    echo "Check Wake-on-LAN in its BIOS (Power On By PCI-E on, ErP off) and that it's wired."
+  fi
+  return 1
 }
+# --- Spread work over several powerplants by their hardware (cluster/distribute.py) ---
+distribute-work() { python3 ~/ros2-remote/cluster/distribute.py --user "$OFFLOAD_USER" "$@"; }
+cluster-status()  { python3 ~/ros2-remote/cluster/distribute.py --user "$OFFLOAD_USER" --status "$@"; }
+stop-work()       { python3 ~/ros2-remote/cluster/distribute.py --user "$OFFLOAD_USER" --stop "${1:-all}" "${@:2}"; }
+job-log()         { python3 ~/ros2-remote/cluster/distribute.py --user "$OFFLOAD_USER" --log "$1"; }
 # <<< ros2-remote <<<
 EOF
 if [ -n "$old_user" ]; then sed -i "s/^export OFFLOAD_USER=\"\$USER\"/export OFFLOAD_USER=\"$old_user\"/" ~/.bashrc; fi
@@ -174,3 +201,4 @@ echo "  show-running-processes     # what's running? safe to power off?"
 echo "  sleep-nuclear-powerplant   # put it to sleep (add 22:30 to wake it at 22:30)"
 echo "  sleep-nuclear-powerplant --after-finish   # sleep automatically when your work is done"
 echo "  list-powerplants / use-powerplant NAME     # choose which PC does the heavy work"
+echo "  distribute-work [--on 4090,desktop]         # spread ws/jobs.yaml over several PCs by hardware"

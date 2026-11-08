@@ -21,7 +21,7 @@ function Done($t) { Write-Host "OK  $t" -ForegroundColor Green }
 $hasDistro = (Clean (wsl.exe -l -q 2>$null)) -contains $Distro
 $user = if ($hasDistro) { Clean (wsl.exe -d $Distro -u root --exec bash -c "getent passwd 1000 | cut -d: -f1") } else { '' }
 
-$what = if ($Role -eq 'offload') { 'the nuclear powerplant setup (ROS 2 offload, agent, guardian, power settings)' } else { 'the ROS 2 offload client setup' }
+$what = if ($Role -eq 'offload') { 'the Computing Power Network powerplant (agent, guardian, ROS containers, power settings)' } else { 'the Computing Power Network client (shortcuts, VS Code extension, Claude skill)' }
 Write-Host "This removes $what from this PC." -ForegroundColor Cyan
 if (-not (YesNo "Continue?")) { Write-Host "Nothing changed."; exit 0 }
 
@@ -80,7 +80,10 @@ EOF
     code --uninstall-extension robobadgers.badgerlabs-offloading-pp *> $null
     Done "BadgerLabsOffloadingPP VS Code extension removed"
   }
-  # 3. Tailscale for Windows
+  # 3. Claude skill
+  Remove-Item (Join-Path $env:USERPROFILE '.claude\skills\computing-power-network') -Recurse -Force -ErrorAction SilentlyContinue
+  Done "Claude skill removed"
+  # 4. Tailscale for Windows
   if (YesNo "Uninstall Tailscale from Windows too?") {
     winget uninstall -e --id Tailscale.Tailscale
   }

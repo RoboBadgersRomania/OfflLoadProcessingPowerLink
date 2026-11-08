@@ -1,6 +1,6 @@
-# BadgerLabsOffloadingPP
+# Computing Power Network (BadgerLabsOffloadingPP)
 
-VS Code extension for **[OffLoad Processing Power Link](https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink)**:
+VS Code extension for the **[Computing Power Network](https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink)**:
 use remote GPU PCs (*nuclear powerplants*) for heavy ROS 2 work, straight from VS Code.
 
 ## Features
