@@ -2,7 +2,7 @@
   "name": "badgerlabs-offloading-pp",
   "displayName": "BadgerLabsOffloadingPP",
   "description": "Offload ROS 2 processing power to remote GPU PCs (nuclear powerplants): pick a PC by its specs with a live green/red dot, start/sleep/wake it, see running processes, auto-pause when its owner uses it, remote build and ROS shells.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "robobadgers",
   "repository": {
     "type": "git",

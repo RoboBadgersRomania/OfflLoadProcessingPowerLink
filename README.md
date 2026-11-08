@@ -169,6 +169,12 @@ For Wake-on-LAN to work: enable *Wake on LAN / Power On By PCI-E* in the powerpl
 **wired** connection, and run `offloadpc-mac` once while it's on (so its MAC is remembered).
 Waking from **sleep** works best; from shutdown also disable Windows *Fast Startup* and BIOS *ErP*.
 
+**BIOS password?** Waking from **sleep** never asks for it (the BIOS isn't involved) and Windows
+stays logged in. A **power-on / system** BIOS password, however, stops every **restart or
+shutdown** at the password screen, and the PC stays unreachable until someone types it. With such a
+password, only use sleep (avoid `offloadpc-restart` / `offloadpc-off`, and keep Windows Update from
+restarting it at night). A **setup / admin** password (only for entering the BIOS) doesn't matter.
+
 Setting up a Raspberry Pi relay: install Raspberry Pi OS Lite → `curl -fsSL https://tailscale.com/install.sh | sh`
 → `sudo tailscale up --ssh` (same account) → done (`python3` is preinstalled).
 
@@ -187,7 +193,7 @@ powerplant) and the **BadgerLabsOffloadingPP** extension to control the powerpla
 | **Dev Containers** (`ms-vscode-remote.remote-containers`) | Work *inside* the powerplant's ROS container |
 | **Robot Developer Extensions for ROS 2** (`Ranch-Hand-Robotics.rde-ros-2`) | ROS 2 launch/debug, URDF preview |
 | **Python**, **C/C++**, **CMake Tools** | Write ROS nodes in Python / C++ |
-| **BadgerLabsOffloadingPP** | This repo's extension: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.2.0.vsix` |
+| **BadgerLabsOffloadingPP** | This repo's extension: `code --install-extension vscode-extension\BadgerLabsOffloadingPP-0.2.1.vsix` |
 
 ### 2. Window 1: your PC (Gazebo, RViz, light nodes)
 - `Ctrl+Shift+P` → **WSL: Connect to WSL** (bottom-left shows `WSL: Ubuntu-24.04`).

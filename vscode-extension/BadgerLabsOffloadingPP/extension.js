@@ -31,19 +31,40 @@ function gpuOf(h) { return (specsOf(h).split('|')[0] || '').trim() || shortName(
 function knownHosts() { return ctx.globalState.get('knownHosts', []); }
 async function remember(h) { if (!knownHosts().includes(h)) await ctx.globalState.update('knownHosts', [...knownHosts(), h]); }
 
-async function remoteUser() {
-  let user = cfg().get('remoteUser');
-  if (user) return user;
-  const guess = (os.userInfo().username || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  user = await vscode.window.showInputBox({
-    title: 'BadgerLabs: your Ubuntu username on the nuclear powerplants',
-    prompt: 'The username you created in Ubuntu on the processing offload PC(s)',
-    value: guess, ignoreFocusOut: true,
+/** Best guess for the Ubuntu username: this PC's own Ubuntu user (usually the same everywhere). */
+function guessUser() {
+  try {
+    const distro = cfg().get('wslDistro') || 'Ubuntu-24.04';
+    const out = cp.execFileSync('wsl.exe', ['-d', distro, '--exec', 'whoami'],
+      { timeout: 8000, windowsHide: true, env: { ...process.env, WSL_UTF8: '1' } }).toString().replace(/\0/g, '').trim();
+    if (/^[a-z_][a-z0-9_-]*$/.test(out) && out !== 'root') return out;
+  } catch (e) { /* no local Ubuntu */ }
+  return (os.userInfo().username || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
+
+async function askUser(title, prompt, value) {
+  const user = await vscode.window.showInputBox({
+    title, prompt, value, ignoreFocusOut: true,
     validateInput: (v) => (/^[a-z_][a-z0-9_-]*$/.test(v) ? undefined : 'Lowercase letters, digits, - and _ only'),
   });
-  if (!user) return undefined;
-  await cfg().update('remoteUser', user, vscode.ConfigurationTarget.Global);
+  if (user) await cfg().update('remoteUser', user, vscode.ConfigurationTarget.Global);
   return user;
+}
+
+async function remoteUser() {
+  const user = cfg().get('remoteUser');
+  if (user) return user;
+  return askUser('BadgerLabs: your Ubuntu username on the nuclear powerplants',
+    'The username you created in Ubuntu on the powerplant(s) when setting them up', guessUser());
+}
+
+/** Tailscale says "policy does not permit you to SSH as user X" when X doesn't exist on that PC. */
+const wrongUser = (res) => /does not permit you to SSH as user/i.test(res.err + res.out);
+async function fixWrongUser() {
+  const u = cfg().get('remoteUser');
+  const p = await vscode.window.showErrorMessage(
+    `The Ubuntu user "${u}" doesn't exist on ${host()}. Use the username you created in Ubuntu on that PC.`, 'Change username');
+  if (p) await askUser(`Ubuntu username on ${host()}`, `Not "${u}" - the one you chose in that PC's Ubuntu setup`, guessUser());
 }
 
 // ---------- network helpers ----------
@@ -139,6 +160,8 @@ async function refreshStatus(interactive = false) {
       vscode.window.showWarningMessage(`Your job on ${h} is PAUSED: someone is using that PC. It resumes when they leave.`, 'Resume anyway', 'OK')
         .then((p) => p === 'Resume anyway' && commands['badgerlabs.resume']());
     }
+  } else if (wrongUser(res)) {
+    last = { state: 'login', detail: `Wrong Ubuntu username "${user}" for ${h}. Fix it: BadgerLabs: Settings > remoteUser (or run any command and choose "Change username").`, gpu: '', paused: false };
   } else if (needsLogin(res)) {
     last = { state: 'login', detail: 'Tailscale SSH wants you to confirm the login.\nRun "BadgerLabs: Open ROS shell on offload PC" and open the link it shows.', gpu: '', paused: false };
   } else {
@@ -182,6 +205,8 @@ async function runPower(action, arg, doneMsg) {
     if (['sleep', 'sleep-until', 'off'].includes(action)) {
       setTimeout(() => { last = { state: 'offline', detail: `Sent "${action}" at ${new Date().toLocaleTimeString()}`, gpu: '', paused: false }; render(); }, 7000);
     } else { setTimeout(() => refreshStatus(false), 1500); }
+  } else if (wrongUser(res)) {
+    await fixWrongUser();
   } else {
     const pick = await vscode.window.showErrorMessage(
       `BadgerLabs: "${action}" failed: ${(res.err || res.out || 'no answer').slice(0, 200)}`, 'Run in terminal');
@@ -262,6 +287,8 @@ const commands = {
       if (mac.ok && mac.out) await ctx.globalState.update(`mac:${h}`, mac.out);
       refreshStatus(false);
       sshTerminal(user, `ROS (${shortName(h)})`, `${DOCKER_DIR()} && docker compose exec dev bash`);
+    } else if (wrongUser(res)) {
+      await fixWrongUser();
     } else if (needsLogin(res)) {
       vscode.window.showWarningMessage('Tailscale wants you to confirm the login. Opening a terminal: open the link it shows.');
       sshTerminal(user, 'Offload login', power('start'));
@@ -279,6 +306,8 @@ const commands = {
       showReport(`${host()} activity`, res.out);
       const verdict = res.out.match(/VERDICT:.*$/m)[0];
       if (res.ok) vscode.window.showInformationMessage(verdict); else vscode.window.showWarningMessage(verdict);
+    } else if (wrongUser(res)) {
+      await fixWrongUser();
     } else {
       vscode.window.showErrorMessage(`Couldn't get the process list: ${(res.err || res.out || 'offline?').slice(0, 200)}`);
     }
@@ -454,6 +483,8 @@ const commands = {
 
 function activate(context) {
   ctx = context;
+  // ssh.exe can't save known hosts if %USERPROFILE%\.ssh is missing
+  try { require('fs').mkdirSync(require('path').join(os.homedir(), '.ssh'), { recursive: true }); } catch (e) { /* ignore */ }
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   statusItem.command = 'badgerlabs.menu';
   render();
