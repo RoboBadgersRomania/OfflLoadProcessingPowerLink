@@ -1,8 +1,11 @@
-# One-click setup. Don't run directly - double-click one of:
-#   SETUP-processingoffloadPC.cmd   (on the processing offload PC: does the heavy computing)
-#   SETUP-my-PC.cmd           (on your laptop / desktop: light work + screen)
-# Safe to run again: finished steps are skipped. If it asks for a reboot, reboot and run it again.
-param([ValidateSet('offload', 'me')][string]$Role = 'me')
+# Computing Power Network setup. Run by the installer / the app (or double-click a SETUP-*.cmd).
+#   -Role both     (default) everything: use the network's power AND share this PC's power
+#   -Role me       only the parts to use other PCs (NodeUser)
+#   -Role offload  only the parts to share this PC (ProcessingNode)
+# Which role is ACTIVE is switched later in the app (My PC tab) without reinstalling.
+# Safe to run again: finished steps are skipped. When Windows needs a restart it asks, restarts,
+# and continues by itself after you log in again.
+param([ValidateSet('both', 'offload', 'me')][string]$Role = 'both')
 
 # 'Continue', not 'Stop': in Windows PowerShell 5.1 any text a program (wsl.exe, winget) writes to
 # stderr counts as an error and would abort the script. Each step checks $LASTEXITCODE instead.
@@ -21,6 +24,24 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 . "$Kit\common.ps1"
 function Step($n, $text) { Write-Host "`n=== [$n/5] $text ===" -ForegroundColor Cyan }
 function Fail($text) { Write-Host "`n$text" -ForegroundColor Yellow; exit 1 }
+
+# Restart + continue automatically: a RunOnce entry starts this setup again at the next login.
+$RunOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+$RunOnceName = 'ComputingPowerNetworkSetup'
+function Restart-AndResume($why) {
+  Write-Host "`n$why" -ForegroundColor Yellow
+  $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Role $Role"
+  New-ItemProperty -Path $RunOnceKey -Name $RunOnceName -Value $cmd -PropertyType String -Force | Out-Null
+  $ans = Read-Host "Restart now? Setup continues by itself after you log in again [Y/n]"
+  if ($ans -match '^[Nn]') { Write-Host "OK - restart when it suits you; setup continues after the next login."; exit 0 }
+  Write-Host "Restarting in 5 s ..."
+  Start-Sleep 5
+  Restart-Computer -Force
+  exit 0
+}
+Remove-ItemProperty -Path $RunOnceKey -Name $RunOnceName -ErrorAction SilentlyContinue
+$doOffload = $Role -in 'offload', 'both'
+$doMe = $Role -in 'me', 'both'
 function Clean($out) { (($out -replace "`0", '') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $env:WSL_UTF8 = '1'   # make wsl.exe print normal text instead of UTF-16
 function Get-Distros { Clean (wsl.exe -l -q 2>$null) }
@@ -34,7 +55,7 @@ function Get-WslUser { Clean (wsl.exe -d $Distro -u root --exec bash -c "getent 
 # Read the result from $LASTEXITCODE afterwards. --exec = no extra shell, so quoting stays intact.
 function WslBash($cmd) { wsl.exe -d $Distro --exec bash -lc $cmd }
 
-$title = if ($Role -eq 'offload') { "processing offload PC (heavy computing)" } else { "Your PC (light work + screen)" }
+$title = @{ both = 'NodeUser + ProcessingNode (everything)'; offload = 'ProcessingNode (share this PC)'; me = 'NodeUser (use other PCs)' }[$Role]
 Write-Host "Computing Power Network setup: $title" -ForegroundColor Green
 
 # 1. Check hardware / Windows
@@ -73,9 +94,9 @@ if (-not (Get-WslVersion)) {
   Write-Host "Updating WSL ..."
   wsl.exe --update
 }
-if ($needReboot) { Fail "Windows features for WSL were turned on. REBOOT the PC, then double-click the same SETUP file again." }
+if ($needReboot) { Restart-AndResume "Windows features for WSL were turned on - Windows needs a restart." }
 $wslVer = Get-WslVersion
-if (-not $wslVer) { Fail "WSL did not install. REBOOT the PC and run again; if it still fails, run 'wsl --install' in an admin PowerShell." }
+if (-not $wslVer) { Restart-AndResume "WSL isn't ready yet - a restart usually finishes it." }
 Write-Host "OK  $wslVer"
 wsl.exe --set-default-version 2 | Out-Null
 
@@ -89,7 +110,7 @@ if ((Get-Distros) -notcontains $Distro) {
     Write-Host "Trying direct download instead of the Microsoft Store ..."
     wsl.exe --install -d $Distro --no-launch --web-download @loc
   }
-  if ((Get-Distros) -notcontains $Distro) { Fail "Ubuntu did not install. REBOOT the PC and run again." }
+  if ((Get-Distros) -notcontains $Distro) { Restart-AndResume "Ubuntu didn't install yet - a restart usually fixes it." }
 }
 $line = Clean (wsl.exe -l -v) | Where-Object { $_ -match [regex]::Escape($Distro) }
 if ($line -match '\s1$') {
@@ -112,7 +133,7 @@ $WslUser = Get-WslUser
 
 # 4. Windows-side settings (RAM for WSL, Tailscale / agent, power)
 Step 4 "Windows settings"
-if ($Role -eq 'offload') {
+if ($doOffload) {
   # Name + "whose PC is this?" (asked once, remembered for reruns)
   Ensure-OffloadDir
   $answersFile = Join-Path $OffloadDir 'powerplant.json'
@@ -132,7 +153,8 @@ if ($Role -eq 'offload') {
   }
   Write-Host "Powerplant: $($answers.Name)   privacy mode: $(if ($answers.Privacy) { 'ON' } else { 'OFF' })"
   & "$Kit\processingoffloadPC\windows-setup.ps1" -WslUser $WslUser -Distro $Distro
-} else {
+}
+if ($doMe) {
   & "$Kit\your-pc\windows-setup.ps1"
 }
 
@@ -146,7 +168,7 @@ Pop-Location
 WslBash "find ~/ros2-remote -name '*.sh' -exec sed -i 's/\r`$//' {} +"
 if ($copyRc -ne 0) { Fail "Could not copy the kit into Ubuntu." }
 
-if ($Role -eq 'offload') {
+if ($doOffload) {
   $envs = "POWERPLANT_NAME=$($answers.Name) PRIVACY=$(if ($answers.Privacy) { 1 } else { 0 })"
   WslBash "$envs bash ~/ros2-remote/processingoffloadPC/setup-wsl.sh"
   if ($LASTEXITCODE -ne 0) {                          # e.g. systemd had to be enabled -> restart WSL, retry once
@@ -174,7 +196,8 @@ if ($Role -eq 'offload') {
   Write-Host "`nDONE. This PC now runs ROS 2 in the background as '$($answers.Name)'." -ForegroundColor Green
   Write-Host "Keep it on and logged in (locking the screen is fine). You can close this window."
   WslBash 'grep -o "^NTFY_TOPIC=[^ ]*" ~/.offload-agent/guardian.conf | sed "s/NTFY_TOPIC=/Phone notifications: ntfy app -> subscribe to /"'
-} else {
+}
+if ($doMe) {
   WslBash 'bash ~/ros2-remote/your-pc/setup-ros-client.sh'
   if ($LASTEXITCODE -ne 0) { Fail "Ubuntu setup failed (see messages above). Run this SETUP file again." }
   Add-Role 'me'
@@ -212,3 +235,4 @@ if ($Role -eq 'offload') {
   Write-Host "In VS Code: click the powerplant (green/red dot) in the status bar, bottom left."
   Write-Host "Make sure Tailscale (tray icon) is signed in with the same account as the offload PC."
 }
+Write-Host "`nSetup finished ($title). Choose what this PC does in the app: My PC -> Role (NodeUser / Both / ProcessingNode)." -ForegroundColor Green

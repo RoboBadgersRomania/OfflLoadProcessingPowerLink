@@ -274,6 +274,7 @@ case "$ACTION" in
     load_conf
     GPU_CSV="$g" LOAD="$load" THREADS="$(nproc)" IDLE="$(win_idle || echo -1)" PAUSED="$(dev_paused && echo 1 || echo 0)" \
     JOBS="${jobs_running:-0}" GUARD="${ENABLED:-1}" NAME="$(powerplant_name)" SPECS="$(cat "$AGENT/specs" 2>/dev/null | tr -d '\r')" \
+    ROLE="$(pc_role)" AVAIL="$(available && echo 1 || echo 0)" SCHED="${SCHEDULE:-}" HWJSON="$AGENT/hwcheck.json" \
     python3 - <<'EOF'
 import json, os
 def num(x, d=0.0):
@@ -283,6 +284,12 @@ g = [p.strip() for p in os.environ.get('GPU_CSV', '').split(',')] if os.environ.
 mem = {}
 for line in open('/proc/meminfo'):
     k, v = line.split(':', 1); mem[k] = int(v.split()[0])
+import time
+try:
+    h = json.load(open(os.environ['HWJSON']))
+    hw = {'verified': bool(h.get('verified')), 'hw_summary': h.get('summary', ''), 'hw_age_h': round((time.time() - h['time']) / 3600, 1)}
+except (OSError, ValueError, KeyError):
+    hw = {'verified': None, 'hw_summary': 'not checked yet', 'hw_age_h': None}
 print(json.dumps({
     'name': os.environ['NAME'], 'specs': os.environ['SPECS'],
     'gpu': g[0] if g else '', 'vram_total_mb': num(g[1]) if len(g) > 1 else 0, 'vram_used_mb': num(g[2]) if len(g) > 2 else 0,
@@ -291,6 +298,8 @@ print(json.dumps({
     'ram_total_gb': round(mem.get('MemTotal', 0) / 1048576, 1), 'ram_avail_gb': round(mem.get('MemAvailable', 0) / 1048576, 1),
     'owner_idle_s': int(num(os.environ['IDLE'], -1)), 'paused': os.environ['PAUSED'] == '1',
     'guardian': os.environ['GUARD'] == '1', 'jobs_running': int(num(os.environ['JOBS'])),
+    'role': os.environ['ROLE'], 'available': os.environ['AVAIL'] == '1', 'schedule': os.environ['SCHED'],
+    **hw,
 }))
 EOF
     ;;
@@ -336,6 +345,83 @@ EOF
     ;;
   job-log)
     tail -n "${ARGS[2]:-40}" "$REPO/ws/.jobs/$ARG1.log" 2>/dev/null || echo "no log for job $ARG1"
+    ;;
+  role)       # role [nodeuser|both|processing] : is this PC shared? (switched from the app's My PC tab)
+    case "$ARG1" in
+      nodeuser)
+        conf_set ROLE nodeuser
+        compose stop >/dev/null 2>&1
+        echo "Role: NodeUser - this PC is no longer shared (its ROS containers are stopped)." ;;
+      both|processing)
+        conf_set ROLE "$ARG1"
+        compose up -d >/dev/null 2>&1
+        echo "Role: $([ "$ARG1" = both ] && echo Both || echo ProcessingNode) - this PC is shared$(in_schedule || echo ', but it is outside its schedule right now')." ;;
+      "") pc_role ;;
+      *) echo "Usage: power.sh role nodeuser|both|processing"; exit 1 ;;
+    esac
+    ;;
+  schedule)   # schedule [show] | clear | "Mon-Fri 22:00-08:00; Sat-Sun 00:00-24:00"
+    spec="${ARGS[*]:1}"
+    case "$spec" in
+      ""|show)
+        load_conf
+        echo "Schedule: ${SCHEDULE:-always available}"
+        if in_schedule; then echo "Now: inside the window (shared)"; else echo "Now: outside the window (not shared; sleeps when idle)"; fi ;;
+      clear)
+        conf_set SCHEDULE ""
+        agent clear-wake-weekly >/dev/null
+        echo "Schedule cleared: always available." ;;
+      *)
+        # validate + expand day ranges for the Windows wake tasks
+        rules=$(SPEC="$spec" python3 - <<'EOF'
+import os, re, sys
+D = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+out = []
+for rule in os.environ['SPEC'].split(';'):
+    if not rule.strip():
+        continue
+    r = re.match(r'\s*([A-Za-z,\- ]+?)\s+(\d{1,2}):(\d\d)\s*-\s*(\d{1,2}):(\d\d)\s*$', rule)
+    if not r or int(r.group(2)) > 24 or int(r.group(4)) > 24:
+        sys.exit(f'bad rule: {rule.strip()!r}  (example: Mon-Fri 22:00-08:00)')
+    days = []
+    for part in r.group(1).split(','):
+        part = part.strip()
+        try:
+            if '-' in part:
+                a, b = (D.index(x.strip()[:3].title()) for x in part.split('-'))
+                k = a
+                while True:
+                    days.append(D[k])
+                    if k == b: break
+                    k = (k + 1) % 7
+            else:
+                days.append(D[D.index(part[:3].title())])
+        except ValueError:
+            sys.exit(f'bad day in {rule.strip()!r} (use Mon Tue Wed Thu Fri Sat Sun)')
+    start = f'{int(r.group(2)) % 24:02d}:{r.group(3)}'
+    out.append(f"{','.join(days)} {start}")
+print('\n'.join(out))
+EOF
+) || { echo "$rules"; exit 1; }
+        conf_set SCHEDULE "$spec"
+        agent clear-wake-weekly >/dev/null
+        while read -r days start; do
+          [ -n "$days" ] && echo "  wake: $(agent wake-weekly "$days" "$start")"
+        done <<<"$rules"
+        echo "Schedule set: $spec"
+        if in_schedule; then echo "Now: inside the window (shared)"; else echo "Now: outside the window"; fi ;;
+    esac
+    ;;
+  hwcheck)    # prove the hardware is real (hwcheck.py, ~15 s, uses the GPU briefly)
+    if dev_paused; then echo "Skipped: job paused (owner using the PC)."; exit 1; fi
+    compose up -d dev >/dev/null 2>&1
+    out=$(compose exec -T dev python3 - < "$REPO/processingoffloadPC/hwcheck.py" 2>&1 | tail -n 1)
+    if echo "$out" | python3 -c 'import json,sys; json.loads(sys.stdin.read())' 2>/dev/null; then
+      echo "$out" > "$AGENT/hwcheck.json"
+      echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["summary"])'
+    else
+      echo "Hardware check failed to run: $out"; exit 1
+    fi
     ;;
   link)       # link host1,host2 | none : connect this powerplant's ROS router to other powerplants' routers
     f="$AGENT/cluster.env"

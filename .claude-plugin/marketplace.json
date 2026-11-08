@@ -1,0 +1,8 @@
+{
+  "name": "computing-power-network",
+  "owner": { "name": "RoboBadgers Romania" },
+  "plugins": [
+    { "name": "computing-power-network", "source": "./claude-skill/cpn-panel",
+      "description": "Side panel for the Computing Power Network: nuclear powerplants with live dots, specs and quick actions" }
+  ]
+}

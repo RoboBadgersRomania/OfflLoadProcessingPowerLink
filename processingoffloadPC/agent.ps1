@@ -2,7 +2,8 @@
 #
 # In privacy mode Ubuntu can't run Windows programs or read Windows files. Instead it drops a
 # one-line request into ~/.offload-agent/cmd, and this agent runs it ONLY if it's on this list:
-#   ping | sleep | sleep-until HH:MM | wake-at HH:MM | off | restart | cancel
+#   ping | sleep | sleep-until HH:MM | wake-at HH:MM | wake-weekly Mon,Tue HH:MM | clear-wake-weekly
+#   | off | restart | cancel
 # The agent also keeps Ubuntu running and writes, every 2 s:
 #   idle       seconds since the PC owner last used keyboard/mouse
 #   heartbeat  unix time (proves the agent is alive)
@@ -92,6 +93,23 @@ function Invoke-Request([string]$line) {
       $r = Schedule-Wake $arg; $script:sleepAt = (Get-Date).AddSeconds(4); return "ok $r, sleeping in 4 s"
     }
     'wake-at'     { if (-not $timeOk) { return 'error: time must be HH:MM' }; return 'ok ' + (Schedule-Wake $arg) }
+    'wake-weekly' {   # wake-weekly Mon,Tue,Wed 22:00  (start of an availability window)
+      $days = @($arg -split ',' | Where-Object { $_ })
+      $t = if ($parts.Count -gt 2) { $parts[2] } else { '' }
+      $map = @{ Mon = 'Monday'; Tue = 'Tuesday'; Wed = 'Wednesday'; Thu = 'Thursday'; Fri = 'Friday'; Sat = 'Saturday'; Sun = 'Sunday' }
+      if (-not $days.Count -or ($days | Where-Object { -not $map.ContainsKey($_) }) -or $t -notmatch '^([01]?\d|2[0-3]):[0-5]\d$') {
+        return 'error: usage wake-weekly Mon,Tue HH:MM'
+      }
+      $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek ($days | ForEach-Object { $map[$_] }) -At ([datetime]::Today.Add([timespan]$t))
+      $a = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'
+      $s = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries
+      Register-ScheduledTask -TaskName "OffloadPC schedule wake $($days -join ',') $($t -replace ':', '')" -Action $a -Trigger $trigger -Settings $s -Force | Out-Null
+      return "ok wakes $($days -join ',') at $t"
+    }
+    'clear-wake-weekly' {
+      Get-ScheduledTask -TaskName 'OffloadPC schedule wake*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+      return 'ok cleared'
+    }
     'off'         {
       & shutdown.exe /s /t 60 /c 'Remote shutdown (offloadpc-off). Cancel: shutdown /a' 2>$null | Out-Null
       if ($LASTEXITCODE -eq 0) { return 'ok shutting down in 60 s' } else { return "error: shutdown failed ($LASTEXITCODE)" }
@@ -104,7 +122,7 @@ function Invoke-Request([string]$line) {
       & shutdown.exe /a 2>$null | Out-Null
       if ($LASTEXITCODE -eq 0) { return 'ok cancelled' } else { return 'ok nothing to cancel' }
     }
-    default       { return "error: '$cmd' is not allowed (allowed: ping sleep sleep-until wake-at off restart cancel)" }
+    default       { return "error: '$cmd' is not allowed (allowed: ping sleep sleep-until wake-at wake-weekly clear-wake-weekly off restart cancel)" }
   }
 }
 

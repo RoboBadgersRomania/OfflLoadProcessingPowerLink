@@ -14,3 +14,5 @@ dashboard/dist/
 *.spec
 # job scripts + logs written on powerplants
 ws/.jobs/
+# installer output
+dist/

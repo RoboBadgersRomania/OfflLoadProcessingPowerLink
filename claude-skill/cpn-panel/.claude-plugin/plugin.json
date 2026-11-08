@@ -1,0 +1,10 @@
+{
+  "name": "computing-power-network",
+  "version": "0.1.0",
+  "description": "Side panel for the Computing Power Network: your nuclear powerplants with live dots, specs and quick actions",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "RoboBadgers Romania"
+  },
+  "repository": "https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink"
+}

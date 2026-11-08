@@ -7,9 +7,9 @@ python -m pip install --upgrade pygame pyinstaller || goto :error
 python -m PyInstaller --noconfirm --onefile --windowed --name ComputingPowerNetwork --hidden-import app launcher.py || goto :error
 echo.
 echo Built: %~dp0dist\ComputingPowerNetwork.exe
-pause
+if /i not "%~1"=="nopause" pause
 exit /b 0
 :error
 echo Build failed.
-pause
+if /i not "%~1"=="nopause" pause
 exit /b 1

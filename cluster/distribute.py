@@ -343,6 +343,12 @@ def main():
         if not caps:
             sys.exit('No powerplant answered: ' + '; '.join(f'{short(h)}: {e}' for h, e in failed.items()))
 
+    # Not shared right now: role NodeUser, or outside its availability schedule
+    for h in [h for h, c in caps.items() if c.get('available') is False]:
+        c = caps.pop(h)
+        failed[h] = 'NodeUser (not shared)' if c.get('role') == 'nodeuser' else f"outside its schedule ({c.get('schedule')})"
+    if not caps:
+        sys.exit('No powerplant is available right now: ' + '; '.join(f'{short(h)}: {e}' for h, e in failed.items()))
     plan, warnings = schedule(jobs, caps)
     if a.json:
         print(json.dumps({'plan': plan, 'warnings': warnings, 'capacity': caps, 'failed': failed}))

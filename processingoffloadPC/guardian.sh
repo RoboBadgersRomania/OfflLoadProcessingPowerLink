@@ -26,7 +26,32 @@ job_running() {
 
 mkdir -p "$AGENT"
 log "guardian started"
+last_sched_check=0
+last_hw_check=0
 while true; do
+  # --- Schedule: outside the availability window, sleep once nobody uses the PC (30 min) and no work runs.
+  now=$(date +%s)
+  if [ $((now - last_sched_check)) -ge 300 ]; then
+    last_sched_check=$now
+    load_conf
+    idle_s=$(win_idle || echo 0)
+    if [ -n "${SCHEDULE:-}" ] && [ "${AUTO_SLEEP_OUTSIDE:-1}" = 1 ] && [ "$(pc_role)" != nodeuser ] && ! in_schedule \
+       && [ "${idle_s:-0}" -ge 1800 ] && bash "$(dirname "${BASH_SOURCE[0]}")/power.sh" processes >/dev/null 2>&1; then
+      log "outside schedule and idle - going to sleep"
+      notify "$(powerplant_name) is going to sleep" "Outside its availability schedule and nobody is using it." "zzz"
+      agent sleep >/dev/null
+    fi
+  fi
+  # --- Hardware check once a day, only when the owner is away (30 min) and no job runs
+  if [ $((now - last_hw_check)) -ge 3600 ]; then
+    last_hw_check=$now
+    hw_time=$(python3 -c "import json;print(json.load(open('$AGENT/hwcheck.json'))['time'])" 2>/dev/null || echo 0)
+    idle_s=$(win_idle || echo 0)
+    if [ $((now - hw_time)) -ge 86400 ] && [ "${idle_s:-0}" -ge 1800 ] && [ "$(pc_role)" != nodeuser ] && ! job_running && ! dev_paused; then
+      log "daily hardware check: $(bash "$(dirname "${BASH_SOURCE[0]}")/power.sh" hwcheck 2>&1 | tail -n 1)"
+    fi
+  fi
+
   load_conf
   idle=$(win_idle || true)
   now=$(date +%s)

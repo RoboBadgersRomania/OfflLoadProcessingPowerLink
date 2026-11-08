@@ -11,6 +11,23 @@ OVERRIDE="$AGENT/guardian-override"           # unix time until which the guardi
 
 load_conf() { [ -f "$CONF" ] && . "$CONF"; }
 
+# conf_set KEY VALUE - set one setting in guardian.conf (quoted safely, keeps the other lines)
+conf_set() {
+  KEY="$1" VAL="$2" CONFF="$CONF" python3 - <<'EOF'
+import os, re, shlex
+k, v, p = os.environ['KEY'], os.environ['VAL'], os.environ['CONFF']
+lines = open(p).read().splitlines() if os.path.exists(p) else []
+new = f'{k}={shlex.quote(v)}'
+for i, l in enumerate(lines):
+    if re.match(rf'^{k}=', l):
+        lines[i] = new
+        break
+else:
+    lines.append(new)
+open(p, 'w').write('\n'.join(lines) + '\n')
+EOF
+}
+
 docker_c() { docker "$@" 2>/dev/null || sudo -n docker "$@" 2>/dev/null; }
 compose()  { (cd "$REPO/docker" && docker_c compose "$@"); }
 dev_id()   { compose ps -q dev 2>/dev/null | head -1; }
@@ -51,3 +68,46 @@ notify() {
 }
 
 powerplant_name() { load_conf; echo "${POWERPLANT_NAME:-$(hostname)}"; }
+
+# Role of this PC (switched in the app): nodeuser = not shared | both | processing
+pc_role() { load_conf; echo "${ROLE:-both}"; }
+
+# in_schedule: true if NOW is inside SCHEDULE (guardian.conf), e.g.
+#   SCHEDULE="Mon-Fri 22:00-08:00; Sat-Sun 00:00-24:00"     (empty = always available)
+# A window that ends before it starts runs past midnight into the next day.
+in_schedule() {
+  load_conf
+  [ -z "${SCHEDULE:-}" ] && return 0
+  SCHED="$SCHEDULE" python3 - <<'EOF'
+import datetime, os, re, sys
+DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+def days(spec):
+    out = set()
+    for part in spec.lower().split(','):
+        part = part.strip()
+        if '-' in part:
+            a, b = (DAYS.index(x.strip()[:3]) for x in part.split('-'))
+            k = a
+            while True:
+                out.add(k)
+                if k == b: break
+                k = (k + 1) % 7
+        elif part:
+            out.add(DAYS.index(part[:3]))
+    return out
+now = datetime.datetime.now()
+wd, m = now.weekday(), now.hour * 60 + now.minute
+for rule in os.environ['SCHED'].split(';'):
+    r = re.match(r'\s*([A-Za-z,\- ]+?)\s+(\d{1,2}):(\d\d)\s*-\s*(\d{1,2}):(\d\d)\s*$', rule)
+    if not r:
+        continue
+    d = days(r.group(1))
+    s, e = int(r.group(2)) * 60 + int(r.group(3)), int(r.group(4)) * 60 + int(r.group(5))
+    if s < e and wd in d and s <= m < e:
+        sys.exit(0)
+    if s >= e and ((wd in d and m >= s) or ((wd - 1) % 7 in d and m < e)):
+        sys.exit(0)
+sys.exit(1)
+EOF
+}
+available() { [ "$(pc_role)" != nodeuser ] && in_schedule; }

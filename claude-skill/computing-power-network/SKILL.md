@@ -6,7 +6,7 @@ description: Operate and troubleshoot the Computing Power Network (BadgerLabs "n
 # Computing Power Network (BadgerLabs nuclear powerplants)
 
 Repo: https://github.com/RoboBadgersRomania/OfflLoadProcessingPowerLink (README has everything).
-Skill version: 1.0.0. If `https://raw.githubusercontent.com/RoboBadgersRomania/OfflLoadProcessingPowerLink/main/claude-skill/computing-power-network/SKILL.md`
+Skill version: 1.1.0. If `https://raw.githubusercontent.com/RoboBadgersRomania/OfflLoadProcessingPowerLink/main/claude-skill/computing-power-network/SKILL.md`
 shows a newer version, offer to replace this file with it (the dashboard's "Update kit" does that too).
 
 ## Architecture (what runs where)
@@ -19,7 +19,13 @@ shows a newer version, offer to replace this file with it (the dashboard's "Upda
   systemd service, hidden Windows agent (`%LOCALAPPDATA%\OffloadPC\agent.ps1`, task "OffloadPC agent").
 - **Privacy mode** (someone else's PC): Ubuntu has no Windows drives and no interop. Windows is reached only via
   the agent through files in `~/.offload-agent/` (`cmd`/`result`, `idle`, `heartbeat`, `mac`, `specs`).
-  Allowed requests: ping, sleep, sleep-until HH:MM, wake-at HH:MM, off, restart, cancel. Never try to bypass it.
+  Allowed requests: ping, sleep, sleep-until HH:MM, wake-at HH:MM, wake-weekly Mon,Tue HH:MM, clear-wake-weekly,
+  off, restart, cancel. Never try to bypass it.
+- **Roles** (switched in the dashboard's My PC tab, `power.sh role nodeuser|both|processing`): NodeUser = uses the
+  network only (this PC not shared, its containers stopped); Both; ProcessingNode = shares only. The installer /
+  `SETUP-everything.cmd` installs both roles everywhere; setup asks to restart and resumes after login (RunOnce).
+- **Apps**: pygame dashboard (`dashboard/`, self-updating launcher, Network + My PC tabs), VS Code extension,
+  Claude side panel plugin `claude-skill/cpn-panel` (`/cpn`), this skill.
 
 ## Running commands
 
@@ -39,6 +45,15 @@ USER is the **Ubuntu** username on the powerplant (not the Windows name; VS Code
 | Guardian | `offloadpc-resume`, `offloadpc-guardian on|off` | `resume`, `guardian` |
 | Distribute jobs | `distribute-work [--on a,b] [--plan]`, `cluster-status`, `stop-work`, `job-log NAME` | `capacity`, `run-job`, `jobs`, `stop-jobs`, `link` |
 | Shut down/restart | `offloadpc-off` / `offloadpc-restart` / `offloadpc-cancel` | `off`, `restart`, `cancel` |
+| Role (shared or not) | dashboard My PC tab | `role [nodeuser|both|processing]` |
+| Availability schedule | dashboard My PC tab | `schedule [show|clear|"Mon-Fri 22:00-08:00; Sat-Sun 00:00-24:00"]` |
+| Prove hardware | dashboard "Run hardware check now" | `hwcheck` (hwcheck.py in the dev container, ~6 s; result in capacity `verified`) |
+| Wake info | `offloadpc-wake-info` | `wake-topic`, `wake-info` |
+
+Wake from any network: a wake listener on the powerplant's LAN (`wake-listener/wake_listener.py --topic <WAKE_TOPIC>`
+on a Pi / old laptop / Termux, or the ESP32 sketch) receives `wake <MAC>` from ntfy.sh and sends Wake-on-LAN.
+Outside its SCHEDULE a powerplant isn't offered (capacity `available: false`), sleeps after 30 min owner-idle with
+no work, and its agent wakes it at each window start.
 
 Rules: sleep/off/restart exit **2** when busy (owner active <10 min, GPU >10 %, ROS nodes, running tmux jobs,
 paused job). Only add `--force` when the user explicitly agrees. Never shut down a PC whose BIOS has a power-on

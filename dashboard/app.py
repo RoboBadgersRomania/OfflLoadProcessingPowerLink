@@ -3,7 +3,7 @@
 Don't run this file directly: run launcher.py (or the compiled ComputingPowerNetwork.exe), which keeps
 this file up to date from the GitHub repo. Needs: Windows, Tailscale signed in, and SETUP-my-PC done.
 """
-APP_VERSION = '1.0.0'
+APP_VERSION = '1.1.0'
 
 import base64
 import concurrent.futures as cf
@@ -12,6 +12,7 @@ import math
 import os
 import queue
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -144,6 +145,8 @@ class Plant:
             return FAINT
         if not self.online:
             return RED
+        if self.cap.get('available') is False:
+            return (110, 122, 156)
         return YELLOW if (self.cap.get('paused') or self.owner_active) else GREEN
 
 
@@ -165,8 +168,8 @@ class Config:
 
 # ======================================================================================= UI bits
 class Button:
-    def __init__(self, label, action, color=BLUE, needs='focus'):
-        self.label, self.action, self.color, self.needs = label, action, color, needs
+    def __init__(self, label, action, color=BLUE, needs='focus', active=None):
+        self.label, self.action, self.color, self.needs, self.active = label, action, color, needs, active
         self.rect = pygame.Rect(0, 0, 0, 0)
         self.enabled = True
 
@@ -213,13 +216,33 @@ class Dashboard:
             Button('Distribute work', self.a_distribute, GREEN, needs='ticked'),
             Button('Jobs status', self.a_jobs, needs='none'), Button('Stop work', self.a_stop_work, RED, needs='none'),
         ]
-        self.top_buttons = [Button('Refresh', lambda: self.poll_now(), needs='none'),
+        self.top_buttons = [Button('Refresh', lambda: (self.poll_now(), self.poll_local()), needs='none'),
                             Button('Update kit', self.a_update_kit, ORANGE, needs='none')]
+        # ---- tabs + My PC
+        self.tab = 'network'
+        self.local = {'installed': None}
+        self._local_event = threading.Event()
+        self.tab_buttons = [Button('Network', lambda: self.set_tab('network'), needs='none', active=lambda: self.tab == 'network'),
+                            Button('My PC', lambda: self.set_tab('mypc'), needs='none', active=lambda: self.tab == 'mypc')]
+        role = lambda r: (lambda: self.local.get('role') == r)
+        self.role_buttons = [Button('NodeUser', lambda: self.a_role('nodeuser'), GREEN, 'local', role('nodeuser')),
+                             Button('Both', lambda: self.a_role('both'), GREEN, 'local', role('both')),
+                             Button('ProcessingNode', lambda: self.a_role('processing'), GREEN, 'local', role('processing'))]
+        self.mode_buttons = [Button('Closed circuit', lambda: self.log('Closed circuit is on: only PCs on your own Tailscale account.'),
+                                    GREEN, 'none', lambda: True),
+                             Button('Global (credits) - planned', lambda: None, GREEN, 'never', lambda: False)]
+        self.sched_buttons = [Button('Always', lambda: self.a_schedule('clear'), BLUE, 'local'),
+                              Button('Nights + weekends', lambda: self.a_schedule('Mon-Fri 22:00-08:00; Sat-Sun 00:00-24:00'), BLUE, 'local'),
+                              Button('Weekends only', lambda: self.a_schedule('Sat-Sun 00:00-24:00'), BLUE, 'local'),
+                              Button('Custom...', self.a_schedule_custom, BLUE, 'local')]
+        self.check_buttons = [Button('Run hardware check now', self.a_hwcheck_local, GREEN, 'local'),
+                              Button('Refresh this PC', self.poll_local, BLUE, 'none')]
         self.log(f'Dashboard v{APP_VERSION}. Looking for nuclear powerplants...')
         if not self.cfg.d['user']:
             threading.Thread(target=self._guess_user, daemon=True).start()
         threading.Thread(target=self.poller, daemon=True).start()
         threading.Thread(target=self.check_dashboard_update, daemon=True).start()
+        threading.Thread(target=self.local_poller, daemon=True).start()
 
     # ------------------------------------------------------------------ background work
     def log(self, text):
@@ -272,6 +295,68 @@ class Dashboard:
             if latest and newer(latest, APP_VERSION):
                 self.q.put(('update_note', f'v{latest} available - restart the dashboard to update'))
             time.sleep(6 * 3600)
+
+    # ------------------------------------------------------------------ this PC (My PC tab)
+    LOCAL_POWER = 'bash ~/ros2-remote/processingoffloadPC/power.sh'
+
+    def poll_local(self):
+        self._local_event.set()
+
+    def local_poller(self):
+        win_specs = ''
+        while self.running:
+            d = self.cfg.d['distro']
+            sep = 'echo @@@'
+            cmd = (f'test -d ~/.offload-agent && echo yes; {sep}; {self.LOCAL_POWER} role 2>/dev/null; {sep}; '
+                   f'{self.LOCAL_POWER} schedule 2>/dev/null; {sep}; cat ~/.offload-agent/hwcheck.json 2>/dev/null; {sep}; '
+                   f'cat ~/.offload-agent/specs 2>/dev/null; {sep}; grep -o "^POWERPLANT_NAME=[^ ]*" ~/.offload-agent/guardian.conf 2>/dev/null')
+            code, out, _ = wsl(d, cmd, 60)
+            parts = [x.strip() for x in out.split('@@@')] + [''] * 6
+            info = {'installed': parts[0] == 'yes', 'role': parts[1], 'schedule': parts[2], 'hw': None,
+                    'specs': parts[4], 'name': parts[5].replace('POWERPLANT_NAME=', '')}
+            try:
+                info['hw'] = json.loads(parts[3]) if parts[3] else None
+            except ValueError:
+                pass
+            if not info['specs']:
+                if not win_specs:   # no powerplant part on this PC: ask Windows directly
+                    _, win_specs, _ = run(['powershell', '-NoProfile', '-Command',
+                        "$g=(Get-CimInstance Win32_VideoController|Select -First 1).Name; $c=(Get-CimInstance Win32_Processor|Select -First 1).Name; "
+                        "$r=[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB); \"$g | $c | $r GB\""], 30)
+                info['specs'] = win_specs
+            self.q.put(('local', info))
+            self._local_event.wait(30)
+            self._local_event.clear()
+
+    def set_tab(self, t):
+        self.tab = t
+        if t == 'mypc':
+            self.poll_local()
+
+    def _local(self, action, label):
+        code, out, err = wsl(self.cfg.d['distro'], f'{self.LOCAL_POWER} {action}', 120)
+        self.log(f'--- {label} (this PC) ---')
+        self.log(out or err or f'(exit {code})')
+        self.poll_local()
+        self.poll_now()
+
+    def a_role(self, r):
+        names = {'nodeuser': 'NodeUser', 'both': 'Both', 'processing': 'ProcessingNode'}
+        self.task(None, 'role', lambda: self._local(f'role {r}', f'role -> {names[r]}'))
+
+    def a_schedule(self, spec):
+        self.task(None, 'schedule', lambda: self._local(f'schedule {shlex.quote(spec)}', 'availability schedule'))
+
+    def a_schedule_custom(self):
+        cur = self.local.get('schedule', '').splitlines()
+        cur = cur[0].replace('Schedule: ', '') if cur else ''
+        self.modal = {'kind': 'input', 'title': 'Availability schedule (when others may use this PC)',
+                      'text': 'Rules separated by ;   e.g.  Mon-Fri 22:00-08:00; Sat-Sun 00:00-24:00\n'
+                              'Outside the windows the PC is not shared and sleeps once nobody uses it.',
+                      'value': '' if cur.startswith('always') else cur, 'ok': lambda v: self.a_schedule(v or 'clear')}
+
+    def a_hwcheck_local(self):
+        self.task(None, 'hardware check', lambda: self._local('hwcheck', 'hardware check'))
 
     def task(self, plant, label, fn):
         """Run an action in the background; plant.working shows it on the card."""
@@ -336,6 +421,8 @@ class Dashboard:
                 self.modal = val
             elif kind == 'update_note':
                 self.update_note = val
+            elif kind == 'local':
+                self.local = val
 
     def _set_user(self, v):
         if re.fullmatch(r'[a-z_][a-z0-9_-]*', v):
@@ -578,6 +665,12 @@ class Dashboard:
                 bits.insert(0, 'JOB PAUSED (owner using it)')
             if not c.get('guardian', True):
                 bits.append('guardian off')
+            if c.get('verified') is True:
+                bits.append(f"hardware verified {c.get('hw_age_h', 0):.0f} h ago")
+            elif c.get('verified') is False:
+                bits.insert(0, 'HARDWARE NOT VERIFIED')
+            if c.get('available') is False:
+                bits.insert(0, 'NOT SHARED (NodeUser)' if c.get('role') == 'nodeuser' else 'outside its schedule')
             self.draw_text('  ·  '.join(bits), self.f_small, YELLOW if (c.get('paused') or 0 <= idle < 600) else DIM, (x, y2 + 30), rect.w - 28)
         elif p.online:
             self.draw_text('online - no details (set your username, or press Update kit)', self.f_small, DIM, (x, y2 + 6), rect.w - 28)
@@ -606,13 +699,18 @@ class Dashboard:
             b.enabled = bool(p and self.cfg.plant(p.host).get('mac'))
         elif b.needs == 'ticked':
             b.enabled = any(q.ticked and q.online for q in self.plants.values()) and bool(self.cfg.d['user'])
+        elif b.needs == 'local':
+            b.enabled = bool(self.local.get('installed'))
+        elif b.needs == 'never':
+            b.enabled = False
         else:
             b.enabled = True
         hi = b.rect.collidepoint(pygame.mouse.get_pos()) and b.enabled
-        base = b.color if b.enabled else (52, 56, 68)
+        on = b.active() if b.active else True
+        base = (b.color if on else (62, 66, 80)) if b.enabled else (44, 47, 58)
         col = tuple(min(255, int(c * (1.15 if hi else 0.85))) for c in base)
         pygame.draw.rect(self.screen, col, b.rect, border_radius=8)
-        tc = BG if b.enabled else FAINT
+        tc = (BG if on else TEXT) if b.enabled else FAINT
         t = ellipsize(self.f, b.label, b.rect.w - 12)
         tw, th = self.f.size(t)
         self.draw_text(t, self.f, tc, (b.rect.centerx - tw // 2, b.rect.centery - th // 2))
@@ -636,9 +734,24 @@ class Dashboard:
         for b in self.top_buttons:
             b.rect = pygame.Rect(tx, 13, 98, 34); tx += 106
             self.draw_button(b)
+        # tabs
+        tx = 16
+        for b in self.tab_buttons:
+            b.rect = pygame.Rect(tx, 70, 130, 32); tx += 138
+            self.draw_button(b)
+        TOP = 112
+        if self.tab == 'network':
+            self.draw_network(W, H, TOP)
+        else:
+            self.draw_mypc(W, H, TOP)
+        if self.modal:
+            self.draw_modal()
+        pygame.display.flip()
+
+    def draw_network(self, W, H, TOP):
         # left: cards
         lw = int(W * 0.56)
-        area = pygame.Rect(16, 76, lw - 24, H - 92)
+        area = pygame.Rect(16, TOP, lw - 24, H - TOP - 16)
         self.card_area = area
         self.screen.set_clip(area)
         y = area.y - self.card_scroll
@@ -655,10 +768,10 @@ class Dashboard:
         # right panel
         rx = lw + 4
         rw = W - rx - 16
-        pygame.draw.rect(self.screen, PANEL, (rx, 76, rw, H - 92), border_radius=12)
+        pygame.draw.rect(self.screen, PANEL, (rx, TOP, rw, H - TOP - 16), border_radius=12)
         p = self.focused()
-        self.draw_text(f"Selected: {short(p.host) if p else '-'}", self.f_mid, TEXT, (rx + 16, 88), rw - 32)
-        y = self.layout_buttons(self.buttons, rx + 16, 118, rw - 32)
+        self.draw_text(f"Selected: {short(p.host) if p else '-'}", self.f_mid, TEXT, (rx + 16, TOP + 12), rw - 32)
+        y = self.layout_buttons(self.buttons, rx + 16, TOP + 42, rw - 32)
         for b in self.buttons:
             self.draw_button(b)
         ticked = sum(1 for q in self.plants.values() if q.ticked)
@@ -666,8 +779,9 @@ class Dashboard:
         y = self.layout_buttons(self.multi_buttons, rx + 16, y + 34, rw - 32, cols=3)
         for b in self.multi_buttons:
             self.draw_button(b)
-        # log
-        log_rect = pygame.Rect(rx + 16, y + 8, rw - 32, H - 92 + 76 - y - 24)
+        self.draw_log(pygame.Rect(rx + 16, y + 8, rw - 32, H - 16 - y - 24))
+
+    def draw_log(self, log_rect):
         self.log_rect = log_rect
         pygame.draw.rect(self.screen, (12, 13, 18), log_rect, border_radius=8)
         lh = self.f_mono.get_linesize()
@@ -683,9 +797,80 @@ class Dashboard:
             col = YELLOW if line.startswith(('!', '  !', 'VERDICT: BUSY')) else GREEN if 'VERDICT: IDLE' in line or line.endswith('online!') else TEXT if line.startswith('---') else DIM
             self.screen.blit(self.f_mono.render(line, True, col), (log_rect.x + 8, log_rect.y + 6 + i * lh))
         self.screen.set_clip(None)
-        if self.modal:
-            self.draw_modal()
-        pygame.display.flip()
+
+    def draw_section(self, title, x, y, w):
+        self.draw_text(title, self.f_mid, TEXT, (x, y), w)
+        return y + 28
+
+    def draw_mypc(self, W, H, TOP):
+        L = self.local
+        lw = int(W * 0.5)
+        left = pygame.Rect(16, TOP, lw - 24, H - TOP - 16)
+        right = pygame.Rect(lw + 4, TOP, W - lw - 20, H - TOP - 16)
+        for r in (left, right):
+            pygame.draw.rect(self.screen, PANEL, r, border_radius=12)
+        x, w = left.x + 18, left.w - 36
+        y = self.draw_section('This PC', x, left.y + 14, w)
+        name = L.get('name') or socket.gethostname()
+        self.draw_text(name, self.f, TEXT, (x, y), w); y += 22
+        specs = [p.strip() for p in (L.get('specs') or 'reading hardware...').split('|')]
+        for label, val in zip(('GPU', 'CPU', 'RAM'), specs + ['', '', '']):
+            self.draw_text(f'{label}:  {val}', self.f, DIM, (x, y), w); y += 20
+        hw = L.get('hw')
+        if hw:
+            age = (time.time() - hw.get('time', 0)) / 3600
+            col = GREEN if hw.get('verified') else RED
+            badge = f"{'VERIFIED' if hw.get('verified') else 'NOT VERIFIED'}  ·  checked {age:.0f} h ago"
+            bw = self.f_small.size(badge)[0] + 18
+            pygame.draw.rect(self.screen, col, (x, y + 4, bw, 22), border_radius=11)
+            self.draw_text(badge, self.f_small, BG, (x + 9, y + 7)); y += 34
+        elif L.get('installed') is False:
+            self.draw_text('Sharing parts not installed here - run SETUP-everything.cmd to enable roles.', self.f_small, YELLOW, (x, y + 4), w); y += 30
+        else:
+            y += 8
+        y = self.draw_section('Role', x, y + 10, w)
+        y = self.layout_buttons(self.role_buttons, x, y, w, cols=3)
+        for b in self.role_buttons:
+            self.draw_button(b)
+        desc = {'nodeuser': 'NodeUser: only USES the network (laptops). This PC is not shared.',
+                'both': 'Both: uses the network AND shares this PC when it is available.',
+                'processing': 'ProcessingNode: only SHARES this PC with your other PCs.'}.get(L.get('role'), 'Role unknown.')
+        self.draw_text(desc, self.f_small, DIM, (x, y), w); y += 30
+        y = self.draw_section('Network', x, y + 4, w)
+        y = self.layout_buttons(self.mode_buttons, x, y, w, cols=2)
+        for b in self.mode_buttons:
+            self.draw_button(b)
+        for line, col in (('Closed circuit: only PCs signed in to YOUR Tailscale account', DIM),
+                          ('(your Google login) can see and use each other.', DIM),
+                          ('Global: share with everyone, earn credits, spend them to use', FAINT),
+                          ('others - planned, not available yet.', FAINT)):
+            self.draw_text(line, self.f_small, col, (x, y), w); y += 18
+        # right column: schedule + checker + log
+        x, w = right.x + 18, right.w - 36
+        y = self.draw_section('Availability schedule (when others may use this PC)', x, right.y + 14, w)
+        for line in (L.get('schedule') or 'unknown').splitlines()[:2]:
+            self.draw_text(line, self.f, TEXT if line.startswith('Schedule') else DIM, (x, y), w); y += 20
+        y = self.layout_buttons(self.sched_buttons, x, y + 6, w, cols=2)
+        for b in self.sched_buttons:
+            self.draw_button(b)
+        self.draw_text('Outside the window the PC is not shared and sleeps once nobody uses it; it wakes itself at the start.',
+                       self.f_small, DIM, (x, y), w); y += 26
+        y = self.draw_section('System checker (proves the hardware is real)', x, y + 6, w)
+        if hw:
+            g, c, r = hw.get('gpu', {}), hw.get('cpu', {}), hw.get('ram', {})
+            rows = [(g.get('ok'), f"GPU  {g.get('cuda_name', '?')}: {g.get('allocated_mb', 0) / 1024:.1f} GB VRAM allocated, {g.get('copy_gb_s', '?')} GB/s"),
+                    (c.get('ok'), f"CPU  {c.get('threads', '?')} threads, scaling x{c.get('scaling', '?')} ({c.get('sha256_mb_s_all', '?')} MB/s SHA-256)"),
+                    (r.get('ok'), f"RAM  {r.get('tested_gb', '?')} GB written at {r.get('write_gb_s', '?')} GB/s")]
+            for ok, text in rows:
+                pygame.draw.circle(self.screen, GREEN if ok else RED, (x + 6, y + 9), 5)
+                self.draw_text(text, self.f_small, DIM, (x + 18, y + 1), w - 18); y += 20
+        else:
+            self.draw_text('Not checked yet.', self.f_small, DIM, (x, y)); y += 20
+        self.draw_text('Runs by itself once a day while nobody uses the PC (~10 s).', self.f_small, FAINT, (x, y + 2), w); y += 24
+        y = self.layout_buttons(self.check_buttons, x, y, w, cols=2)
+        for b in self.check_buttons:
+            self.draw_button(b)
+        self.draw_log(pygame.Rect(x, y + 4, w, right.bottom - y - 18))
 
     def draw_modal(self):
         W, H = self.screen.get_size()
@@ -745,9 +930,14 @@ class Dashboard:
             elif getattr(self, 'card_area', None) and self.card_area.collidepoint(pos):
                 self.card_scroll = max(0, self.card_scroll - e.y * 40)
         elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-            for b in self.buttons + self.multi_buttons + self.top_buttons:
+            visible = self.top_buttons + self.tab_buttons + (
+                self.buttons + self.multi_buttons if self.tab == 'network'
+                else self.role_buttons + self.mode_buttons + self.sched_buttons + self.check_buttons)
+            for b in visible:
                 if b.rect.collidepoint(e.pos) and b.enabled:
                     b.action(); return
+            if self.tab != 'network':
+                return
             for h, r in getattr(self, 'card_rects', {}).items():
                 if r.collidepoint(e.pos) and self.card_area.collidepoint(e.pos):
                     p = self.plants[h]
